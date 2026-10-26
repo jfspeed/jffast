@@ -68,6 +68,41 @@ class FlowableConfigTest {
                 "flowable.eventregistry.enabled 必须为 false，否则与 process 引擎抢 schema.version 行导致启动失败");
     }
 
+    /**
+     * BPMN 部署 / 解析必须走安全 XML（禁 DOCTYPE 与外部实体）。
+     * <p>
+     * 本仓开放 {@code POST /flow/process/deploy} 接收任意 BPMN XML，而 flowable-engine ≤ 8.0.0
+     * 的 XML 解析链路存在 XXE 类缺陷（CVE-2026-91197，截至 2026-10 官方仍无修复版本），上游加固依赖
+     * {@code enableSafeBpmnXml}。
+     * <p>
+     * Spring Boot 场景下 {@code FlowableProcessProperties#enableSafeXml} 默认即为 true，此处显式配置
+     * 作为「明示意图 + 防上游改默认值」的双保险。本测试守护两件事：<ol>
+     *   <li>键名必须是 {@code enable-safe-xml}（源自字段 enableSafeXml）；</li>
+     *   <li>不能误写成 {@code enable-safe-bpmn-xml} —— 那是无效键，宽松绑定静默忽略，等于没配。</li>
+     * </ol>
+     */
+    @Test
+    void bpmnXmlParsingMustBeEnabledWithExactSafeKey() {
+        Map<String, Object> yml = loadAppYml();
+
+        Object flowable = yml.get("flowable");
+        if (!(flowable instanceof Map)) {
+            fail("application.yml 缺少根 flowable 配置段");
+        }
+        Map<?, ?> flowableMap = (Map<?, ?>) flowable;
+        Object process = flowableMap.get("process");
+        if (!(process instanceof Map)) {
+            fail("application.yml 缺少 flowable.process 配置段");
+        }
+        Map<?, ?> processMap = (Map<?, ?>) process;
+        assertFalse(processMap.containsKey("enable-safe-bpmn-xml"),
+                "flowable.process.enable-safe-bpmn-xml 是无效键（真实字段名是 enableSafeXml），"
+                        + "Spring Boot 会静默忽略它 → BPMN 解析仍可能受 XXE 影响；请改为 enable-safe-xml");
+        assertEquals(Boolean.TRUE, processMap.get("enable-safe-xml"),
+                "必须显式开启 flowable.process.enable-safe-xml，否则 BPMN 部署/解析链路可被 XXE 利用"
+                        + "（/flow/process/deploy 对外接收任意 BPMN XML）");
+    }
+
     @Test
     void eventRegistryMustNotHideUnderJffastKey() {
         Map<String, Object> yml = loadAppYml();

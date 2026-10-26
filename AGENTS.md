@@ -236,7 +236,7 @@ domain/       dto（入参）、vo（出参），禁止用 entity 直接接收/�
 ### 1.1 顶层目录
 
 ```
-jffast/                      ← 后端 Base 根（父 POM，packaging=pom，version 1.0.0-SNAPSHOT）
+jffast/                      ← 后端 Base 根（父 POM，packaging=pom，version 1.0.0）
 ├── jffast-bom/              版本管理（统一版本，业务模块禁止单独指定版本号）
 ├── jffast-common/           通用基础（BaseEntity/R/异常/工具）
 ├── jffast-starters/         Starter 聚合（12 个：mybatis/web/security/redis/log/file/excel/social/job/flowable/oauth2-client/demo-mode）
@@ -325,7 +325,7 @@ jffast (pom)
 
 - **`application.yml`**：端口 7200、context-path、`jffast.mybatis.tenant.enabled=false`（默认关）、`data-scope.enabled=true`、虚拟线程、Quartz JDBC、sa-token
 - **`application-dev.yml`**：数据源 / Redis 经环境变量；RSA `jffast.rsa.*`（`RsaKeyGenerator` 生成）
-- 安全：密码前端 RSA → 后端 BCrypt；XSS 仅 form/query/header，不处理 JSON 体
+- 安全：密码前端 RSA → 后端 BCrypt（强度因子 12，见 `EncryptionUtil#BCRYPT_LOG_ROUNDS`）；XSS 过滤覆盖 form/query/header **以及 JSON 请求体**（`WebProperties#jsonClean` 默认 true，`bpmnXml` / `contentTemplate` 等代码类字段经 `jsonSkipFields` 豁免）
 
 ## 三、环境要求（汇总）
 

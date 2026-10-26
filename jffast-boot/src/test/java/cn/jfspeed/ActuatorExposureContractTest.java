@@ -95,7 +95,11 @@ class ActuatorExposureContractTest {
                 "异步队列容量必须显式配置且 >0（SysTaskRunner 启动校验）");
 
         Map<String, Object> file = section(resource("/application.yml"), "jffast", "file");
-        assertEquals(0, ((Number) file.get("download-max-bytes")).intValue(),
-                "文件下载上限必须可配（0=不限制）");
+        long downloadMaxBytes = ((Number) file.get("download-max-bytes")).longValue();
+        assertTrue(downloadMaxBytes > 0,
+                "文件下载上限必须有非零默认值：LocalFileStorageService#downloadFile 走 Files.readAllBytes "
+                        + "把整个文件读进堆，0（不限制）时并发下载若干大文件即 OOM");
+        assertTrue(downloadMaxBytes >= 50L * 1024 * 1024,
+                "文件下载上限默认不应低于 50MB（当前 " + downloadMaxBytes + "），否则会误伤头像/附件/导入模板等常规用途");
     }
 }

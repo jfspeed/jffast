@@ -6,7 +6,7 @@
 |------|----------|
 | 尚未发布 | ⏳ 首个正式版本发布后，此处将列出受支持的版本与分支 |
 
-> 本项目**尚未正式发布**（当前为 `1.0.0-SNAPSHOT`），因此还没有"受支持版本"这一概念。
+> 本项目**首发版本为 `1.0.0`**（全部 pom / Helm Chart 已由发布指令统一定版；此前是 `1.0.0-SNAPSHOT` 开发快照）。
 > 首个正式版本发布后，会在此列出受支持的版本与分支；仅最新 minor 分支获得安全修复，请尽量升级到最新版本。
 
 ## 报告漏洞
@@ -32,3 +32,48 @@
 - CORS 仅放行可信来源：`jffast.web.cors.allowed-origin-patterns`
 - 多实例部署时开启 Quartz 集群（见 `deploy/README.md`）
 - 上传目录使用独立路径并限制类型/大小
+
+## 已知取舍（有意保留，不是缺陷）
+
+下面两条在「安全性 vs 开箱即用」之间选择了后者。**部署方必须知道它们的边界**，请勿再次当成漏洞提交。
+
+### 1. `/upload/**` 免登录可读
+
+文件存储根同时决定上传根目录与 `/upload/**` 的静态映射，且该路径在 Sa-Token 免登录白名单里。
+
+- **为什么保留**：头像、附件这类图片要能被 `<img src="...">` 直接引用。`<img>` 不会携带 Authorization 头，
+  一旦要求鉴权，页面上的头像与图片附件会全部失效，只能改造成签名 URL / blob 下载，代价远超收益。
+- **因此必须记住**：存储根内的**每一个文件都视同对外公开**。URL 形如「日期目录 + 随机文件名」不可枚举，
+  但**一旦泄露就是永久可读**，且没有任何访问审计。
+- **不要往里放敏感文件**：服务端生成的产物写在存储根之外——这正是 `jffast.system.task.file-dir`
+  默认指向 `./task-files`（而非 `./upload/task`）的原因，配成根内子目录会直接启动失败。
+- 若业务需要把附件变成私有：**不要**在 `/upload/**` 上加鉴权（会连带打碎 `<img>` 引用），
+  请改用 `SysFileController#download/{id}`（已按 `create_by` 做归属校验）作为唯一读取通道。
+
+### 2. 默认 profile 是 `dev`
+
+新人 clone 后应当能零配置跑起来，因此 `spring.profiles.default=dev`；配套的 `test1234` 是随仓库公开的
+统一**测试填充值**（prod profile 下 `JFFAST_INIT_PASSWORD` 必填，缺失即启动失败）。
+
+弱口令本身不是风险，**把它用在公网可达的端点上才是**。因此 `DevProfileGuard` 做了一道兜底：
+当 dev/test profile + 公开测试口令 + **远程数据源**三者同时成立时**直接拒绝启动**
+（`demo` profile 的演示站只告警不拦截，因为它是显式对外展示形态）。此外 `application-prod.yml`
+把接口文档与 Sa-Token 会话日志一并关闭，RSA 密钥与初始口令全部改为必填。
+
+**部署到公网时**：显式 `--spring.profiles.active=prod`，或至少替换数据源口令与初始口令。
+
+## 已加固项基线
+
+下列默认值已刻意收紧，改动前请先读这里的理由：
+
+| 配置 | 当前值 | 为什么 |
+|------|--------|--------|
+| `flowable.process.enable-safe-xml` | `true` | 关闭 BPMN 的 DOCTYPE / 外部实体（XXE）。本仓开放 `POST /flow/process/deploy` 接收任意 BPMN XML。注意键名是 `enable-safe-xml`（对应字段 `enableSafeXml`），写成 `enable-safe-bpmn-xml` 是无效键，会被宽松绑定静默忽略 |
+| `jffast.file.download-max-bytes` | `52428800`（50MB） | `LocalFileStorageService#downloadFile` 走 `Files.readAllBytes` 全量入堆；`0`（不限制）时并发下载若干大文件即 OOM |
+| `sa-token.active-timeout` | `7200` | 原 `-1`（永不过期）会让被踢出 / 已吊销的 token 一直可用 |
+| `sa-token.is-log` | `false` | 会话日志会打印账号信息；仅在排查会话问题时临时打开 |
+| BCrypt 强度因子 | `12` | OWASP 当前建议下限。强度写在哈希串里，调整该值**不影响存量口令校验**（见 `EncryptionUtil#BCRYPT_LOG_ROUNDS`） |
+
+> Flowable ≤ 8.0.0 的布局解析器存在 XXE（CVE-2026-91197），截至 2026-10 上游仍无修复版本。
+> 本仓**不调用** `GetDeploymentProcessDiagramLayoutCmd`（jar 内唯一触发点），因此该攻击链在当前代码不可达；
+> 部署/解析链路已由 `enable-safe-xml` 兜住。上游发布修复版本后请直接升级。

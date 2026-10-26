@@ -57,8 +57,8 @@ public class SysFileController extends BaseController<SysFileService, SysFile> {
     @Resource
     private FileStorageService fileStorageService;
 
-    /** 下载上限（字节），0 表示不限制；大文件下载仍是 byte[] 全量，见 R-09 长期方案 */
-    @Value("${jffast.file.download-max-bytes:0}")
+    /** 下载上限（字节），默认 50MB；0 表示不限制；大文件下载仍是 byte[] 全量，见 R-09 长期方案 */
+    @Value("${jffast.file.download-max-bytes:52428800}")
     private long downloadMaxBytes;
 
     @GetMapping("/page")

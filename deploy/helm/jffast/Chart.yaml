@@ -5,7 +5,7 @@ description: |
   部署 jffast-boot 应用，可选启用 MySQL / Redis 子 chart。
 type: application
 version: 0.1.0
-appVersion: "1.0.0-SNAPSHOT"
+appVersion: "1.0.0"
 home: https://github.com/summerZstar/jffast
 sources:
   - https://github.com/summerZstar/jffast

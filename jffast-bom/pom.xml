@@ -6,7 +6,7 @@
 
     <groupId>cn.jfspeed</groupId>
     <artifactId>jffast-bom</artifactId>
-    <version>1.0.0-SNAPSHOT</version>
+    <version>1.0.0</version>
     <packaging>pom</packaging>
     <name>jffast-bom</name>
     <description>jffast BOM - Bill of Materials for version management</description>
@@ -206,10 +206,14 @@
             <artifactId>commons-compress</artifactId>
             <version>1.27.1</version>
         </dependency>
+            <!-- 安全：8.5.7 及更早受 CVE-2025-59952（CVSS 8.7 High，GHSA-h7rh-xfpj-hpcm）影响——
+                 解析 S3 返回的 XML 时会把标签值里的 ${...} 替换成系统属性/环境变量的真值，
+                 等价于让不可信 XML 回带 MYSQL_PASSWORD / RSA_PRIVATE_KEY 等凭据。8.6.0 起关闭该替换。
+                 升级只需改坐标，官方无 API 破坏变更。 -->
             <dependency>
                 <groupId>io.minio</groupId>
                 <artifactId>minio</artifactId>
-                <version>8.5.7</version>
+                <version>8.6.0</version>
             </dependency>
             <!-- 对象存储多云 SDK（按存储类型选用） -->
             <dependency>
@@ -242,10 +246,12 @@
                 <artifactId>dom4j</artifactId>
                 <version>2.1.4</version>
             </dependency>
+            <!-- 安全：1.78 受 CVE-2025-8916（PKIXCertPathReviewer 过度资源分配，DoS，CVSS 6.3）影响，
+                 官方修复版本 1.79。纯版本 bump，API 兼容。 -->
             <dependency>
                 <groupId>org.bouncycastle</groupId>
                 <artifactId>bcprov-jdk18on</artifactId>
-                <version>1.78</version>
+                <version>1.79</version>
             </dependency>
 
             <!-- ─── Flowable 工作流引擎 ─── -->

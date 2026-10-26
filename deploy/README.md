@@ -96,7 +96,7 @@ docker run -d --name jffast-boot \
   -e RSA_PRIVATE_KEY="<your-private-key>" \
   -e RSA_PUBLIC_KEY="<your-public-key>" \
   -e JFFAST_INIT_PASSWORD="<admin 初始密码>" \
-  jffast-boot:1.0.0-SNAPSHOT
+  jffast-boot:1.0.0
 ```
 
 > ⚠️ **`SPRING_PROFILES_ACTIVE` 是必填项**：数据源 / Redis / RSA 只存在于 `application-{dev,test,prod}.yml`，
@@ -249,7 +249,7 @@ cp values.yaml my-values.yaml
 ```yaml
 image:
   repository: jffast/jffast-boot
-  tag: "1.0.0-SNAPSHOT"
+  tag: "1.0.0"
 
 secrets:
   MYSQL_PASSWORD: "<strong-password>"       # 必改
@@ -381,7 +381,7 @@ spec:
     spec:
       containers:
         - name: jffast-boot
-          image: jffast-boot:1.0.0-SNAPSHOT
+          image: jffast-boot:1.0.0
           ports:
             - containerPort: 7200
           env:

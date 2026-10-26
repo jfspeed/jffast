@@ -15,6 +15,8 @@
  */
 package cn.jfspeed.common.util;
 
+import cn.hutool.crypto.digest.BCrypt;
+import cn.hutool.crypto.digest.DigestUtil;
 import cn.jfspeed.common.security.util.EncryptionUtil;
 import cn.jfspeed.common.core.exception.BusinessException;
 import org.junit.jupiter.api.DisplayName;
@@ -50,6 +52,27 @@ class EncryptionUtilTest {
         void shouldRejectWrongPassword() {
             String encrypted = EncryptionUtil.getEncryptPassword("A@123456");
             assertFalse(EncryptionUtil.verifyPassword("wrong", encrypted));
+        }
+
+        @Test
+        @DisplayName("新生成的哈希必须使用 >=12 的 BCrypt 强度因子（OWASP 当前建议下限）")
+        void shouldUseStrongBcryptCost() {
+            String encrypted = EncryptionUtil.getEncryptPassword("A@123456");
+            // BCrypt 哈希形如 $2a$12$<22位salt><31位hash>，第 4~5 个字符即 log rounds
+            assertTrue(encrypted.matches("^\\$2[abxy]\\$(\\d{2})\\$.+$"),
+                    "不是标准的 BCrypt 哈希格式：" + encrypted);
+            int cost = Integer.parseInt(encrypted.substring(4, 6));
+            assertTrue(cost >= 12,
+                    "BCrypt 强度因子过低（" + cost + "），OWASP 当前建议 >= 12");
+        }
+
+        @Test
+        @DisplayName("历史低强度因子（cost=10）的存量哈希仍能正常校验，升级成本不应强制改密")
+        void shouldStillVerifyLegacyCostTenHash() {
+            // 固定 salt 造一个 cost=10 的哈希，模拟存量库里的老口令
+            String legacy = BCrypt.hashpw(DigestUtil.sha256Hex("A@123456"), BCrypt.gensalt(10));
+            assertTrue(EncryptionUtil.verifyPassword("A@123456", legacy));
+            assertFalse(EncryptionUtil.verifyPassword("wrong", legacy));
         }
     }
 

@@ -72,8 +72,12 @@ jffast:
     xss:
       enabled: true
   file:
-    # 文件下载前按记录大小预检，0=不限制（大文件全量 byte[] 的长期方案见开发规范）
-    download-max-bytes: 0
+    # 文件下载前按记录大小预检（原默认 0=不限制）。
+    # 安全/稳定性：LocalFileStorageService#downloadFile 走 Files.readAllBytes 返回全量 byte[]，
+    # 不限流时并发下载若干大文件就能把堆打满（且 >2GB 会直接抛 OutOfMemoryError 而非受控异常）。
+    # 默认放宽到 50MB——覆盖头像/附件/导入模板等全部常规用途，超出走业务码 400（HTTP 200 + body.code）而非 OOM。
+    # 确有超大文件需求请显式调大，并同时改成流式输出（长期方案见 docs/开发规范.md）。
+    download-max-bytes: 52428800
     storage:
       type: local
       local:
@@ -241,6 +245,15 @@ flowable:
   # 流程定义缓存数量
   process:
     definition-cache-limit: 100
+    # 安全 XML 解析：禁用 BPMN 里的 DOCTYPE / 外部实体与外部 DTD，防 XXE。
+    # 背景：flowable-engine ≤ 8.0.0 的布局解析器存在 XXE（CVE-2026-91197，截至 2026-10 官方仍无修复版），
+    # 且本项目开放 /flow/process/deploy 接收任意 BPMN XML，因此部署/解析链路必须显式加固。
+    # Spring Boot 场景下 FlowableProcessProperties.enableSafeXml 默认即 true（构造器的默认真值），
+    # 这里仍然显式写出：一是明示安全意图，二是防止未来上游把默认值改掉或换用非 Boot 装配方式时静默失效。
+    # 对应引擎开关 ProcessEngineConfiguration.setEnableSafeBpmnXml(boolean)。
+    # ⚠️ 键名必须写成 enable-safe-xml（来自字段 enableSafeXml），
+    #    写成 enable-safe-bpmn-xml 是无效键：Spring Boot 宽松绑定会忽略它，等于没配。
+    enable-safe-xml: true
   # 关闭不需要的引擎模块（保持轻量）
   cmmn:
     enabled: false
@@ -254,11 +267,16 @@ flowable:
 sa-token:
   token-name: token
   timeout: 2592000
-  active-timeout: -1
+  # 空闲超时：原为 -1（永不过期），意味着 token 一旦签发，只要持有者持续请求就永久有效，
+  # 回收权限/踢人后旧 token 仍可用。改为 2 小时无操作失效（-effectiveness=按空闲计）。
+  active-timeout: 7200
   is-concurrent: true
   is-share: false
   token-style: random-64
-  is-log: true
+  # Sa-Token 的会话日志会打印登录/登出/踢人等动作的账号信息，与安全相关的 debug 日志同属
+  #「不该默认开」的一档（见 application-dev.yml 顶部关于 `cn.jfspeed: debug` 的警示）。
+  # prod profile 早已关闭，这里把基线也关掉：需要排查会话问题时临时打开即可。
+  is-log: false
   filter:
     enabled: false
 

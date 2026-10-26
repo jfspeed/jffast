@@ -1,4 +1,4 @@
-# 发布信息 · jffast（未发布，首发将定版 v1.0.0）
+# 发布信息 · jffast v1.0.0（首发）
 
 > 本文件是**发布工件与升级操作口径**（发什么、怎么升、升完怎么验）。功能亮点的叙述见 [docs/release-highlights.md](docs/release-highlights.md)；逐条变更记录见 [CHANGELOG.md](CHANGELOG.md)。
 
@@ -7,7 +7,7 @@
 | 项 | 值 |
 |----|----|
 | 组件 | `jffast`（疾风后端 Base：通用基础 + Starter 体系 + system/flow/demo/ai 业务模块 + 可运行 `jffast-boot`） |
-| 本包版本 | `1.0.0-SNAPSHOT`（开发快照，**尚未发布**） |
+| 本包版本 | `1.0.0`（**已定版**，首发 V1；等待打 tag `v1.0.0` 并推送） |
 | 上一版本 | 无（尚未正式对外发布） |
 | 发布轮次 | 首发（V1） |
 | 收录范围 | 当前 master 全部提交（首发一次性收录） |
@@ -18,9 +18,8 @@
 ## 2 版本口径说明
 
 - **轮次（V1/V2…）** 是文档口径的功能发布序号，用于说明「本包相对上一轮发了什么」。
-- **语义版本**：当前开发版本保持 `1.0.0-SNAPSHOT`；正式发布时由发布指令统一定版（**首发 = v1.0.0**）并清理提交记录，在此之前不固化版本号、不打 tag。
-- **现状差异**：全部 pom 保持 `1.0.0-SNAPSHOT`；发布前按发布指令统一定版。
-- Helm Chart（`deploy/helm/jffast`）的 `appVersion` / 镜像 `tag` 已对齐为 `1.0.0-SNAPSHOT`；正式发布时随 pom 一起定版为 `v1.0.0`。
+- **语义版本**：全部 pom / Helm `appVersion` / 镜像 `tag` 已由发布指令统一从 `1.0.0-SNAPSHOT` 定版为 **`1.0.0`**（首发），不再回退为 SNAPSHOT。
+- **现状差异**：`jffast-common` 代码生成器模板里的 parent 版本号随本次一并改为 `1.0.0`，保证生成的新模块与当前 SDK 同版本。
 
 ## 3 组件与版本矩阵
 
@@ -61,8 +60,8 @@
 
 ## 6 发布前待办与校验清单
 
-- [ ] 发布时执行：`pom.xml` 及各子模块版本统一定版（首发 `v1.0.0`，当前保持 `1.0.0-SNAPSHOT`）
-- [ ] 发布时执行：`CHANGELOG.md` 的 `[Unreleased]` 段落定版并标注日期
+- [x] `pom.xml` 及各子模块版本统一定版（首发 `1.0.0`，含 Helm `appVersion` / 镜像 `tag` / 代码生成器模板）
+- [ ] `CHANGELOG.md` 的 `[Unreleased]` 段落定版为 `1.0.0` 并标注发布日期（与打 tag 同一步完成）
 - [ ] `mvn clean install -DskipTests=false` 全绿 + JaCoCo 门禁通过（本机已验证全绿；**CI 尚未实跑**——本仓库尚未配置远程，push 后由 CI 实跑再据实勾选）
 - [ ] 冒烟：登录（RSA + 验证码 `/sys/needCaptcha`）、CRUD、代码生成器、定时任务、工作流审批人解析、WebSocket 推送（本机已跑通 19 项 HTTP 冒烟；浏览器端 E2E 未跑）
 - [ ] 发布时执行：打 tag（首发 `v1.0.0`）并推送（本仓库当前无任何 tag，版本追溯依赖 CHANGELOG）

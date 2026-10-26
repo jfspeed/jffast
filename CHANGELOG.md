@@ -2,8 +2,8 @@
 
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 格式，版本号遵循[语义化版本](https://semver.org/lang/zh-CN/)。
 
-> **版本口径说明**：本项目**尚未正式发布**，当前所有 pom 保持 `1.0.0-SNAPSHOT`（见 [release-info.md](release-info.md)）。
-> 下文标题中的版本号与日期是**开发里程碑**（能力批次）标记，**不是已发布的 tag**；正式发布时将由发布指令统一定版（**首发 = v1.0.0**）。
+> **版本口径说明**：全部 pom / Helm Chart 已由发布指令统一从 `1.0.0-SNAPSHOT` 定版为 **`1.0.0`**（首发 V1，见 [release-info.md](release-info.md)）。
+> 下文的 `## [Unreleased]` 段落即首发内容，打 `v1.0.0` tag 时定版为该版本并标注日期。
 
 ## [Unreleased]
 
@@ -34,7 +34,7 @@
 - 授权变更会话失效：角色授权字段（`roleKey`/`dataScope`/自定义部门绑定集合）或用户角色/部门变化时，事务提交后同步撤销绑定用户会话（`RoleAuthorizationChangedEvent`/`UserAuthorizationChangedEvent`，`AFTER_COMMIT`，禁止 `@Async`）；角色创建不发布事件
 - 异步任务归属隔离：分页/详情/下载/删除按 `create_by` 隔离（超管全量），详情不返回服务器路径，下载仅允许任务目录内文件
 - Actuator 暴露分层：默认与生产仅 `health`/`info`，`dev` 额外暴露 `metrics`/`prometheus`；`/actuator/health/**` 免登录
-- 文件下载上限 `jffast.file.download-max-bytes`（默认 0 表示不限制）
+- 文件下载上限 `jffast.file.download-max-bytes`（默认 52428800 = 50MB，超限返回 HTTP 200 + 业务码 400；`0` 表示不限制）
 
 ### 修复
 
@@ -101,8 +101,18 @@
 - `mvnw` 与 `deploy/gen-rsa.sh` 补执行位（100755）：Windows 上不影响使用，Linux / macOS 克隆后 `./mvnw` 直接 `permission denied`，无 Maven 的读者第一步就走不通
 - 角色 `role_key` 重名不再由应用层独扛（开源前复核 D1）：`role_key` 是授权判定依据，服务层用 `selectOne(eq("role_key", "common"))` 取「普通用户角色」来生成新角色 id，一旦重名 `selectOne` 直接抛结果集异常、**新建角色整条链 500**；而控制器的 `checkRoleNameAndKey` 是「先查后插」，并发下两个请求能双双通过。现由库侧 `UNIQUE (tenant_id, role_key)` 兜底，冲突翻译成可读提示（`角色标识已被占用：xxx`，不再把索引名/SQL 原文透到前端）。门禁：`RoleKeyUniquenessDdlTest`（3 项，含"去掉索引/改成可空就变红"的反证）+ `SysRoleDuplicateKeyTranslationTest`（2 项）
 
+### 安全
+
+- **依赖 CVE 修复**：`minio` `8.5.7 → 8.6.0`（CVE-2025-59952，CVSS 8.7 High：S3 返回的 XML 标签值里的 `${...}` 会被替换成系统属性/环境变量真值，等同让不可信 XML 回带凭据）；`bcprov-jdk18on` `1.78 → 1.79`（CVE-2025-8916，PKIXCertPathReviewer DoS）
+- **BPMN 解析显式开启安全 XML**：`flowable.process.enable-safe-xml: true`（禁 DOCTYPE / 外部实体 / 外部 DTD）。本仓开放 `POST /flow/process/deploy` 接收任意 BPMN XML，而 flowable-engine ≤ 8.0.0 存在 XXE 类缺陷（CVE-2026-91197，上游截至 2026-10 无修复版）。门禁 `FlowableConfigTest#bpmnXmlParsingMustBeEnabledWithExactSafeKey` 同时挡住「键名误写成 `enable-safe-bpmn-xml`」——那是无效键，宽松绑定会静默忽略，等于没配
+- **BCrypt 强度因子固定为 12**：此前 `BCrypt.hashpw(sha256Pwd)` 未传 cost，落到库默认的 10；低于 OWASP 当前建议下限。**存量口令不受影响**（强度写在哈希串里，校验按其自带 rounds），只有新密码用 12。门禁 `EncryptionUtilTest#shouldUseStrongBcryptCost` + `shouldStillVerifyLegacyCostTenHash`
+- **文件下载上限给了非零默认值**：`jffast.file.download-max-bytes` `0（不限制）→ 52428800`（50MB）。`LocalFileStorageService#downloadFile` 走 `Files.readAllBytes` 把整个文件读进堆，不限流时并发下载若干大文件即 OOM（>2GB 更是直接 `OutOfMemoryError` 而非受控异常）。超出走业务码 400（HTTP 200 + body.code，与全局业务异常口径一致）
+- **Sa-Token 会话默认值收紧**：`is-log` `true → false`（会话日志打印账号信息；prod 早已关闭，这里把基线也关掉）；`active-timeout` `-1（永不过期）→ 7200`（2 小时无操作失效，避免被踢出 / 已吊销的 token 一直可用）
+- `SECURITY.md` 新增「已知取舍」章节，写明两条**有意保留**的行为及其边界：`/upload/**` 免登录可读（`<img src>` 不带 Authorization 头，加鉴权会让头像与图片附件全部失效；故存储根内文件一律视同公开，敏感产物必须写在根外——这正是 `jffast.system.task.file-dir` 的由来）、默认 profile 为 `dev`（由 `DevProfileGuard` 在「dev + 公开测试口令 + 远程数据源」三者同时成立时直接拒绝启动来兜底）
+
 ### 变更
 
+- **版本定版：`1.0.0-SNAPSHOT` → `1.0.0`（首发）**：覆盖 22 个 `pom.xml`、Helm Chart 的 `appVersion` 与镜像 `tag`、`deploy/README.md`，以及 `CodeGenerator` 模板里的 parent 版本号（保证新生成模块与当前 SDK 同版本）
 - **`sys_role.tenant_id` 由可空改为 `NOT NULL DEFAULT 0`，并新增唯一索引 `uk_sys_role_tenant_role_key (tenant_id, role_key)`**：全新库直接跑 `sql/` 即可；**已有库需先查重清理**（`SELECT tenant_id, role_key, COUNT(*) FROM sys_role GROUP BY 1,2 HAVING COUNT(*)>1`）再 `ALTER`，否则加索引直接失败。两个设计点：① 唯一维度带 `tenant_id` 而不是只用 `role_key`，否则商业版多租户下两个租户无法各自拥有 `common` / `super_admin`；② `tenant_id` 必须 NOT NULL 并以 0 作「单租户/未启用租户隔离」的哨兵值，因为 MySQL 唯一索引**不约束 NULL 行**，而 Base 默认关闭租户隔离、存量行全是 NULL——可空形态下已用 MySQL 8.0.26 实测：两条 `tenant_id=NULL` 的 `common` 全部落库，索引形同虚设
 - 用户导入模板由 5 列变为 6 列（末列「归属部门」）：**5 列旧模板对非超管逐行失败：归属部门不能为空**（超管仍可导入，留空即不设归属部门）；导出文件列数保持 5 列不变
 - `/sys/user/resetPassword` 响应由明文字符串改为 `{userId,userName,password}` 对象；`/social/bind` 入参改为 `{ticket}`；`GET /social/callback` 必须携带服务端签发的 `state` 并返回 `bindTicket`

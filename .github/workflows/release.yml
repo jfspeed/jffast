@@ -1,7 +1,8 @@
 name: Release
 
 # 打 tag（v*）时构建可执行 jar 并创建 GitHub Release。
-# 版本定版由发布指令执行：先把 pom 的 1.0.0-SNAPSHOT 改为 1.0.0，再打 v1.0.0 tag。
+# 版本定版已完成：pom / Helm appVersion / 镜像 tag 均已从 1.0.0-SNAPSHOT 改为 1.0.0。
+# 后续每次发布：先由发布指令把版本改为新值，再打同名 tag（首发 v1.0.0）。
 
 on:
   push:

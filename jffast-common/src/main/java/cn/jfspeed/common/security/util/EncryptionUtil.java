@@ -42,12 +42,24 @@ public class EncryptionUtil {
     public static final String API_PARAM_SIGN_KEY = "sign";
     public static final String API_PARAM_TIME_KEY = "timestamp";
 
+    /**
+     * BCrypt 强度因子（log rounds）。
+     * <p>
+     * 此前调用 {@code BCrypt.hashpw(String)} 未传 cost，落到 hutool 的默认 10 —— 可用但偏低，
+     * OWASP 当前建议 ≥ 12。成本是 log2 级的：每 +1 计算量翻倍，12 约比 10 慢 4 倍，仍在可接受范围。
+     * <p>
+     * 变更成本**不影响存量口令**：BCrypt 的强度写在哈希串里（{@code $2a$12$...}），
+     * {@code checkpw} 按串中记录的 rounds 校验，因此旧 cost=10 的账号仍能正常登录，
+     * 只在新密码生成时提升到 12（自然演进，无需强制全体改密）。
+     */
+    public static final int BCRYPT_LOG_ROUNDS = 12;
+
     private EncryptionUtil() {
     }
 
     public static String getEncryptPassword(String rawPassword) {
         String sha256Pwd = DigestUtil.sha256Hex(rawPassword);
-        String newPassword = BCrypt.hashpw(sha256Pwd);
+        String newPassword = BCrypt.hashpw(sha256Pwd, BCrypt.gensalt(BCRYPT_LOG_ROUNDS));
         return newPassword;
     }
 

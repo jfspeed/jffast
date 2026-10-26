@@ -2661,7 +2661,7 @@ public class CodeGenerator {
                 "    <parent>\n" +
                 "        <groupId>cn.jfspeed</groupId>\n" +
                 "        <artifactId>jffast-biz</artifactId>\n" +
-                "        <version>1.0.0-SNAPSHOT</version>\n" +
+                "        <version>1.0.0</version>\n" +
                 "        <relativePath>../pom.xml</relativePath>\n" +
                 "    </parent>\n\n" +
                 "    <artifactId>" + artifactId + "</artifactId>\n" +
