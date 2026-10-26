@@ -46,8 +46,16 @@ public interface JobStore {
     /**
      * 认领：把 `service_name` 为空的任务归属到指定服务。
      * <p>用于老数据平滑迁移 —— 某个服务的代码里存在该任务的 Bean，就由它接手执行。
+     *
+     * <p><b>为什么必须返回结果</b>：认领是**有竞争**的 —— 多个服务可能同时认领同一行，
+     * 库里靠 {@code AND service_name IS NULL} 保证只有一个赢家。
+     * 调用方必须据此决定"这一行归不归我"：
+     * 认领失败还照排期 ⇒ 同一个任务被两个服务各排一次 ⇒ <b>被执行两次</b>。
+     *
+     * @return true = 认领成功（该行此刻归 {@code serviceName}）；
+     *         false = 认领失败（该行已被别的服务认领 / 行已不存在 / 存储不可用）
      */
-    void claim(Long id, String serviceName);
+    boolean claim(Long id, String serviceName);
 
     /** 写一条执行日志 */
     void insertLog(JobLogRecord record);

@@ -188,6 +188,8 @@ class JobSchedulerOwnershipStampTest {
     void defaultSchedulerClaimsRunnableUnownedTask() {
         when(jobStore.listAll()).thenReturn(List.of(row("unowned", null, 1)));
         when(applicationContext.containsBean("demoJobService")).thenReturn(true);
+        // 认领成功（认领是有竞争的，失败时行为见 JobSchedulerClaimOutcomeTest）
+        when(jobStore.claim(any(), anyString())).thenReturn(true);
 
         scheduler().sync();
 

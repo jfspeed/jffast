@@ -142,15 +142,20 @@ public class JdbcJobStore implements JobStore {
     }
 
     @Override
-    public void claim(Long id, String serviceName) {
+    public boolean claim(Long id, String serviceName) {
         if (!isAvailable()) {
-            return;
+            return false;
         }
         try {
-            jdbcTemplate.update("UPDATE sys_job SET service_name = ? WHERE id = ? AND service_name IS NULL",
+            // 影响行数 = 1 表示"这一行原本 service_name IS NULL，被本服务认领成功"；
+            // = 0 表示"已经被别的服务认领走了"（认领是**有竞争**的，并发下只有一个赢家）。
+            int affected = jdbcTemplate.update(
+                    "UPDATE sys_job SET service_name = ? WHERE id = ? AND service_name IS NULL",
                     serviceName, id);
+            return affected > 0;
         } catch (DataAccessException e) {
             degrade(e);
+            return false;
         }
     }
 

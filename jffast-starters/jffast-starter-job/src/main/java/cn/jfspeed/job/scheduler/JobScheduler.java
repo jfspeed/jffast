@@ -167,9 +167,13 @@ public class JobScheduler implements CommandLineRunner, DisposableBean {
                             target.isEnabled() ? "启用" : "暂停",
                             StrUtil.isBlank(target.getCron()) ? "未排期" : target.getCron());
                 } else if (StrUtil.isBlank(existing.getServiceName())) {
-                    jobStore.claim(existing.getId(), appName);
-                    claimed++;
-                    log.info("【定时任务】认领无归属任务: {} → 归属 {}", existing.getJobName(), appName);
+                    if (jobStore.claim(existing.getId(), appName)) {
+                        claimed++;
+                        log.info("【定时任务】认领无归属任务: {} → 归属 {}", existing.getJobName(), appName);
+                    } else {
+                        // 并发认领只有一个赢家：这一行已被别的服务抢走了，本服务不认领。
+                        log.info("【定时任务】无归属任务 {} 已被其它服务认领，本服务不认领", existing.getJobName());
+                    }
                 } else if (!appName.equals(existing.getServiceName())) {
                     log.warn("【定时任务】任务 {} 已归属 {}（本服务 {} 不会执行它）",
                             existing.getJobName(), existing.getServiceName(), appName);
@@ -234,16 +238,8 @@ public class JobScheduler implements CommandLineRunner, DisposableBean {
                 // ⚠️ 2026-09-23 现场验证抓到过漏判 status 的 bug：只判归属不判启用，
                 //    结果 paused 的任务照样被排进 Quartz（表现：启动日志"新建/改动 2 条"而两条都是暂停的）。
                 if (!canRunHere(row) || !row.isEnabled()) {
-                    if (quartzManager.checkExists(row.getJobName(), row.getJobGroup())) {
-                        if (ownedByOtherService(row.getJobName(), row.getJobGroup())) {
-                            // 归属戳表明这条 trigger 是别的服务建的：共享同一套 QRTZ_ 表时，
-                            // 删掉它就是打断兄弟服务（对方页面里任务还在、却不再执行）。
-                            log.debug("【定时任务】触发器 {}.{} 属于其它服务，本服务不删除",
-                                    row.getJobGroup(), row.getJobName());
-                        } else {
-                            quartzManager.deleteJob(row.getJobName(), row.getJobGroup());
-                            removed++;
-                        }
+                    if (removeOwnTrigger(row)) {
+                        removed++;
                     }
                     if (!row.isEnabled()) {
                         disabled++;
@@ -256,8 +252,17 @@ public class JobScheduler implements CommandLineRunner, DisposableBean {
                     noCron++;
                     continue;
                 }
+                if (!claimOwnership(row)) {
+                    // 认领失败 ⇒ 这一行归别的服务了 ⇒ 本服务不排它。
+                    // 同时清掉本进程里可能残留的触发器（上一轮排过的话），
+                    // 否则本进程与赢家各排一次 ⇒ 同一个任务被执行两次。
+                    notMine++;
+                    if (removeOwnTrigger(row)) {
+                        removed++;
+                    }
+                    continue;
+                }
                 running++;
-                claimIfRunnableAndUnowned(row);
                 desired.add(JobKey.jobKey(row.getJobName(), row.getJobGroup()));
                 String currentCron = quartzManager.getCronExpression(row.getJobName(), row.getJobGroup());
                 // 首轮（进程刚启动）**强制重建**：misfire 策略、执行类这些"只在创建时生效"的东西
@@ -347,41 +352,85 @@ public class JobScheduler implements CommandLineRunner, DisposableBean {
     }
 
     /**
-     * 无归属任务（{@code service_name} 为空）由**跑得动它的那个服务**认领。
+     * 无归属任务（{@code service_name} 为空）的归属裁决：认领，并把结果告诉调用方。
      *
-     * <p>为什么必须认领：{@code service_name} 为空的行按 {@code canRunHere} 的口径归
-     * 「默认调度者」（{@code jffast.job.scheduler.default-scope=true} 的那个服务）。
-     * 而这个开关是**每个应用各自配**的 —— 两个服务都配了 true 时，同一条无归属任务
-     * 会被两边同时排期：内存调度器下变成**同一个任务被执行两次**，
-     * 共享 QRTZ_ 表时变成两个 trigger 互删（谁也跑不稳）。
-     *
-     * <p>认领后 {@code service_name} 落库，归属变成**记录下来的事实**而不是运行时开关，
-     * 别的服务就不会再认领它（{@code claim} 自带 {@code AND service_name IS NULL}，并发下也只有一个赢家）。
+     * <p><b>为什么必须返回结果</b>：认领是**有竞争**的 —— 多个服务可能同时认领同一行，
+     * 库里靠 {@code AND service_name IS NULL} 保证只有一个赢家。
+     * 若只看"我是默认调度者"就排期（不认领、或认领失败也不管），
+     * 两个都配了 {@code default-scope=true} 的服务会**各排一次同一个任务 ⇒ 执行两次**。
+     * 所以调用方必须依据认领结果决定排不排。
      *
      * <p>⚠️ <b>只认领自己跑得动的任务</b>（调用目标的 Bean 在本进程的 classpath 里）：
      * 认领一个跑不动的任务，会把真正跑得动的那个服务挡在门外 ⇒ 任务永远没人执行
      * （这正是 cloud 的 system 服务去执行 demo 任务、结果 "NoSuchBeanDefinitionException" 的那类问题）。
      *
-     * <p>注解登记路径（{@link #registerAnnotatedJobs}）已经对"本服务有 Bean"的行做过同样的认领，
-     * 这里补的是**没有任何服务有 Bean** 的那部分：谁都不认领 ⇒ 保持无归属，
-     * 由默认调度者按原口径执行（老行为不变，不会凭空多出"没人跑"的洞）。
+     * <p>而"本服务跑不动、别的服务也跑不动"的行**照旧由默认调度者按原口径执行**
+     * （{@code canRunHere} 的既有契约）—— 不能因为跑不动就悄悄不排期，
+     * 否则任务会**静默地永远不执行**，比报错更难查。
+     *
+     * @return true = 本服务排它（认领成功 / 已有归属归本服务 / 按原口径由默认调度者执行）；
+     *         false = 本服务不排它（认领失败：已被别的服务认领）
      */
-    private void claimIfRunnableAndUnowned(JobRecord row) {
-        if (row.getId() == null || StrUtil.isNotBlank(row.getServiceName())) {
-            return;
+    private boolean claimOwnership(JobRecord row) {
+        if (StrUtil.isNotBlank(row.getServiceName())) {
+            // 已有归属：认领不适用。归属是不是本服务，由 canRunHere 判定（这里只做防御）。
+            return row.getServiceName().equals(appName);
         }
         if (!properties.getScheduler().isDefaultScope()) {
-            return;
+            // 非默认调度者：无归属任务不归它管（canRunHere 已经拦过一次，这里是防御）。
+            return false;
         }
         if (!JobInvokeUtil.isBeanPresent(row.getInvokeTarget())) {
-            // 本服务跑不动它（Bean 不在本进程 classpath）⇒ 不认领，留给跑得动的那个服务
-            return;
+            // 本服务跑不动它（Bean 不在本进程 classpath）⇒ **不认领**，留给跑得动的那个服务。
+            // 但仍按原口径排期（老行为不变）：否则无人认领时任务会静默地永远不执行。
+            log.debug("【定时任务】无归属任务 {} 的调用目标不在本进程，不认领（仍按默认调度者口径排期）",
+                    row.getJobName());
+            return true;
+        }
+        if (row.getId() == null) {
+            // 没有主键就没法认领（库里不存在这种行，防御性保留）。
+            return true;
         }
         try {
-            jobStore.claim(row.getId(), appName);
-            log.info("【定时任务】默认调度者认领无归属任务: {} → 归属 {}", row.getJobName(), appName);
+            boolean won = jobStore.claim(row.getId(), appName);
+            if (won) {
+                log.info("【定时任务】默认调度者认领无归属任务: {} → 归属 {}", row.getJobName(), appName);
+                return true;
+            }
+            // 认领失败 = 这一行已被**别的服务**认领走了 ⇒ 本服务不得再排它，
+            // 否则同一个任务会被两个服务各排一次 ⇒ 执行两次。
+            log.info("【定时任务】无归属任务 {} 已被其它服务认领，本服务不排期", row.getJobName());
+            return false;
         } catch (Exception e) {
-            log.warn("【定时任务】认领无归属任务失败（不影响本轮调度）: {}", row.getJobName(), e);
+            // 认领本身失败（DB 抖动等）：保守处理 —— 不排期，避免与赢家重复执行。
+            log.warn("【定时任务】认领无归属任务失败（不排期，避免重复执行）: {}", row.getJobName(), e);
+            return false;
+        }
+    }
+
+    /**
+     * 清掉**本服务自己**的触发器（存在才清）。
+     *
+     * <p>归属戳写着别的服务时**不删**：共享同一套 QRTZ_ 表时，删除动作落在共享表上，
+     * 就是打断兄弟服务（对方页面里任务还在、却不再执行）。
+     *
+     * @return true = 确实删掉了一个触发器
+     */
+    private boolean removeOwnTrigger(JobRecord row) {
+        try {
+            if (!quartzManager.checkExists(row.getJobName(), row.getJobGroup())) {
+                return false;
+            }
+            if (ownedByOtherService(row.getJobName(), row.getJobGroup())) {
+                log.debug("【定时任务】触发器 {}.{} 属于其它服务，本服务不删除",
+                        row.getJobGroup(), row.getJobName());
+                return false;
+            }
+            quartzManager.deleteJob(row.getJobName(), row.getJobGroup());
+            return true;
+        } catch (Exception e) {
+            log.error("【定时任务】清理触发器失败: {}.{}", row.getJobGroup(), row.getJobName(), e);
+            return false;
         }
     }
 

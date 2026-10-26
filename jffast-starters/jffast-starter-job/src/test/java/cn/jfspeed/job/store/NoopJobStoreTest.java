@@ -49,7 +49,12 @@ class NoopJobStoreTest {
     @DisplayName("写入类方法为 no-op，可安全调用")
     void writesAreNoop() {
         store.insert(new JobRecord());
-        store.claim(1L, "jffast-system");
         store.insertLog(new cn.jfspeed.job.domain.JobLogRecord());
+    }
+
+    @Test
+    @DisplayName("无存储可写 ⇒ 认领不成立（不得当成认领成功）")
+    void claimNeverSucceeds() {
+        assertFalse(store.claim(1L, "jffast-system"));
     }
 }

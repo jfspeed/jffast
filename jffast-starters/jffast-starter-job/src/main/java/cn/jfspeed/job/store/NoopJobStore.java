@@ -56,8 +56,9 @@ public class NoopJobStore implements JobStore {
     }
 
     @Override
-    public void claim(Long id, String serviceName) {
-        // no-op
+    public boolean claim(Long id, String serviceName) {
+        // no-op：无存储可写 ⇒ 认领不成立
+        return false;
     }
 
     @Override
