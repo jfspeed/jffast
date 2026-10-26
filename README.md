@@ -40,7 +40,7 @@
 | 前端 CRUD 工厂       | ✅ createCrud |         ❌         |        ❌       |       ❌      |      ✅ 低代码      |
 | 轻量级认证            |  ✅ Sa-Token  | ❌ Spring Security |   ✅ Sa-Token   |   ❌ OAuth2   |     ❌ Shiro     |
 | 多租户字段隔离⁵          |   ⚙️ 预留⁵   |         ❌³        |        ✅       |       ✅      |        ✅        |
-| 数据权限             |     ✅ 4级     |        ✅ 5级       |      ✅ 5级      |       ✅      |        ✅        |
+| 数据权限             |     ✅ 5级     |        ✅ 5级       |      ✅ 5级      |       ✅      |        ✅        |
 | 开源协议             | ✅ Apache 2.0 |       ✅ MIT       |  ✅ Apache 2.0  | ✅ Apache 2.0 |    ⚠️ 含商业限制⁴    |
 | 代码生成             |    ✅ 开源版内置   |      ✅ 开源版内置      |     ✅ 开源版内置    |    ✅ 开源版内置   |      ✅ 低代码      |
 | 前端框架             | TDesign Vue3 |    Element Plus   |  Element Plus  | Element Plus | Ant Design Vue3 |
@@ -108,10 +108,11 @@
 > **关于验证码**：登录验证码按失败次数自动启用——同一账号连续输错 2 次后，登录页自动出现图形验证码（`/sys/needCaptcha` 判定 + `/sys/getCode` 取图），无需额外配置。
 >
 > **文件存储已知限制（jffast-starter-file）**：本地存储上传路径强制追加时间戳子目录（落盘路径不可精确预测，需要确定性路径请自建 `XxxFileService`）；`delete()` 仅支持单文件；本地存储根目录 `jffast.file.storage.local.path` 同时决定上传根与 `/upload/**` 静态映射，两处必须一致，改配置时请整体替换。
+> 另有一条**安全边界**要记住：`/upload/**` 在免登录白名单里，所以存储根内的每个文件都对外公开可下载（这是「头像/附件要能被 `<img>` 直接引用」的代价）。因此服务端生成的敏感文件（如异步导出的用户表格）必须写在根目录之外——`jffast.system.task.file-dir` 默认 `./task-files`，配成根内子目录会启动失败。
 >
-> **数据权限 / 社交登录边界（Base）**：Base 内置 **4 级**数据权限（`@DataPermission`，需注解触发）与 GitHub/Gitee/Microsoft 个人 OAuth2 登录。
+> **数据权限 / 社交登录边界（Base）**：Base 内置 **5 级**数据权限（全部 / 本级及下 / 本级 / 仅本人 / 自定义，`@DataPermission` 注解触发；拦截器由 `jffast.mybatis.data-scope.enabled` 控制，缺省即装配）与 GitHub/Gitee/Microsoft 个人 OAuth2 登录。
 >
-> **异步任务结果文件（单实例）**：导入导出任务的结果文件写在本地存储根目录下的 `task` 子目录（`jffast.file.storage.local.path/task`），任务归属按 `create_by` 隔离。默认形态只适用于**单实例**：多实例部署必须把该目录挂成共享卷或改用对象存储，否则在另一实例下载会返回「文件不存在或已清理」。
+> **异步任务结果文件（单实例）**：导入导出任务的中间文件写在**文件存储根之外**的工作目录 `./task-files`（`jffast.system.task.file-dir`，可经 `JFFAST_TASK_FILE_DIR` 覆盖）——存储根经 `/upload/**` 免登录静态映射，敏感产物落在里面等于公开下载，配错会启动失败。任务归属按 `create_by` 隔离。默认形态只适用于**单实例**：多实例部署必须把该目录挂成共享卷或改用对象存储，否则在另一实例下载会返回「文件不存在或已清理」。
 
 ### 前端功能
 
@@ -342,7 +343,7 @@ SOURCE sql/ai_knowledge.sql;
 > - 前端公钥通过 `GET /sys/rsaPublicKey` 动态下发，无需手工同步
 > - ⚠️ **生产环境必须显式注入**：多实例部署时各实例密钥必须一致，否则登录请求打到不同实例会解密失败
 > - 生成方式：运行 `cn.jfspeed.common.security.util.RsaKeyGenerator` 的 main 方法，或调用 `RSAUtil.initKey()`
-> - 私钥注入后端 `RSA_PRIVATE_KEY`，公钥同步到前端 `.env.development` / `.env.production` 的 `VITE_RSA_PUBLIC_KEY`
+> - 私钥注入后端 `RSA_PRIVATE_KEY`，公钥同步到前端：开发写 `.env.development`，生产构建用 `VITE_RSA_PUBLIC_KEY=<公钥> npm run build` 或 `.env.release.local`（前端仓库不提供 `.env.production`，`npm run build` 走 `--mode release`）
 
 ### 4. 编译运行
 
@@ -500,6 +501,7 @@ java -jar jffast-boot/target/jffast-boot.jar
 - 健康检查：`curl http://localhost:7200/jffast-api/actuator/health`
 - 初始口令三态：`JFFAST_INIT_PASSWORD` 有值用该值；留空则随机生成并打印到启动日志（只显示一次）；未注入时使用公开测试值 `test1234` 并打 WARN（仅本地体验）。
 - 本地文件存储落在工作目录 `./upload`，nginx 反代需放行 `/upload/` 并放开 `client_max_body_size`（后端上限 20MB）。
+- 异步导入导出的临时 xlsx 落在工作目录 `./task-files`（可用 `JFFAST_TASK_FILE_DIR` 改），**不要**指到 `./upload` 里面：`upload/` 被 `/upload/**` 免登录静态映射，落进去的文件等于对外公开下载；指错会直接启动失败。该目录不需要 nginx 放行，只经 `/sys/task/download/{id}`（登录 + 归属校验）读取。
 
 **4）前端**只打 `dist/` 再用自己的 nginx 托管，见 `jffast-ui` 仓 README 的「部署 → 方式 B」。
 

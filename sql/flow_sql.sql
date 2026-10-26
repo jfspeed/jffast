@@ -69,7 +69,10 @@ INSERT IGNORE INTO `sys_menu` (`id`, `parent_id`, `name`, `sort`, `url`, `path`,
 (3021, 3002, '流程部署', 1, '', NULL, 'F', 1, 'flow:process:deploy', 0, '#', ''),
 (3022, 3002, '流程挂起', 2, '', NULL, 'F', 1, 'flow:process:deploy', 0, '#', ''),
 (3023, 3002, '流程激活', 3, '', NULL, 'F', 1, 'flow:process:deploy', 0, '#', ''),
-(3024, 3002, '流程删除', 4, '', NULL, 'F', 1, 'flow:process:deploy', 0, '#', '');
+(3024, 3002, '流程删除', 4, '', NULL, 'F', 1, 'flow:process:deploy', 0, '#', ''),
+-- 查询按钮：与 sys_task.sql 的「任务查询」(2203) 同因——超管的按钮权限集只由 F 行组成
+-- （SysMenuService.listAllBtnPerm 过滤 type='F'），只在 C 行上挂码时该码没有可授予的按钮形态。
+(3025, 3002, '流程定义查询', 5, '', NULL, 'F', 1, 'flow:process:view', 0, '#', '');
 
 -- 流程实例按钮
 INSERT IGNORE INTO `sys_menu` (`id`, `parent_id`, `name`, `sort`, `url`, `path`, `type`, `state`, `perms`, `visible`, `icon`, `remark`) VALUES
@@ -80,7 +83,8 @@ INSERT IGNORE INTO `sys_menu` (`id`, `parent_id`, `name`, `sort`, `url`, `path`,
 INSERT IGNORE INTO `sys_menu` (`id`, `parent_id`, `name`, `sort`, `url`, `path`, `type`, `state`, `perms`, `visible`, `icon`, `remark`) VALUES
 (3041, 3004, '签收任务', 1, '', NULL, 'F', 1, 'flow:task:claim', 0, '#', ''),
 (3042, 3004, '审批任务', 2, '', NULL, 'F', 1, 'flow:task:complete', 0, '#', ''),
-(3043, 3004, '转办任务', 3, '', NULL, 'F', 1, 'flow:task:delegate', 0, '#', '');
+(3043, 3004, '转办任务', 3, '', NULL, 'F', 1, 'flow:task:delegate', 0, '#', ''),
+(3044, 3004, '任务查询', 4, '', NULL, 'F', 1, 'flow:task:view', 0, '#', '');
 
 -- ----------------------------
 -- 默认流程分类数据

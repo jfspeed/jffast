@@ -18,24 +18,28 @@ package cn.jfspeed.system.controller;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.mockStatic;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.io.ByteArrayOutputStream;
 
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.MockedStatic;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import cn.jfspeed.common.core.exception.BusinessException;
+import cn.jfspeed.common.security.util.LoginUtil;
 import cn.jfspeed.file.service.FileStorageService;
 import cn.jfspeed.system.entity.SysFile;
 import cn.jfspeed.system.service.SysFileService;
@@ -52,6 +56,9 @@ import jakarta.servlet.http.HttpServletResponse;
 @MockitoSettings(strictness = Strictness.LENIENT)
 class SysFileDownloadLimitTest {
 
+    /** 下载已加归属校验：这些用例只关心上限，所以让登录人正好是文件登记人 */
+    private static final long OWNER_ID = 7L;
+
     @Mock
     private SysFileService service;
 
@@ -61,10 +68,20 @@ class SysFileDownloadLimitTest {
     @InjectMocks
     private SysFileController controller;
 
+    private MockedStatic<LoginUtil> login;
+
     @BeforeEach
     void setUp() {
         ReflectionTestUtils.setField(controller, "service", service);
         ReflectionTestUtils.setField(controller, "fileStorageService", fileStorageService);
+        login = mockStatic(LoginUtil.class);
+        login.when(LoginUtil::getLoginUserId).thenReturn(OWNER_ID);
+        login.when(LoginUtil::isSuperAdmin).thenReturn(false);
+    }
+
+    @AfterEach
+    void tearDown() {
+        login.close();
     }
 
     private static SysFile file(long size) {
@@ -73,6 +90,7 @@ class SysFileDownloadLimitTest {
         file.setUrl("2026/10/19/demo.xlsx");
         file.setFileName("demo.xlsx");
         file.setSize(size);
+        file.setCreateBy(OWNER_ID);
         return file;
     }
 

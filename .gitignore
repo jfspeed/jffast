@@ -48,6 +48,9 @@ logs/
 
 ### Upload ###
 upload/
+# 异步导入导出的临时 xlsx（jffast.system.task.file-dir 默认值）。
+# 刻意放在 upload/ 之外：upload/ 被 /upload/** 免登录静态映射，产物混进去等于对外公开下载。
+task-files/
 
 ### IDE ###
 *.factorypath

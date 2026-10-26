@@ -19,7 +19,6 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.Mockito.mock;
 
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -40,18 +39,30 @@ import cn.jfspeed.mybatis.config.DataScopeContext;
  */
 class SysTaskRunnerQueueCapacityTest {
 
+    /** 任务产物目录指到 target/ 下：已被 .gitignore 覆盖，不会在测试里留下散落的目录 */
+    private static final String TEST_TASK_DIR = "target/task-files-test";
+
+    private static FileStorageProperties storageRoot(String localPath) {
+        FileStorageProperties properties = new FileStorageProperties();
+        FileStorageProperties.Local local = new FileStorageProperties.Local();
+        local.setPath(localPath);
+        properties.setLocal(local);
+        return properties;
+    }
+
     @Test
     @DisplayName("队列容量 <= 0 启动即失败")
     void nonPositiveCapacityFailsFast() {
-        FileStorageProperties properties = mock(FileStorageProperties.class);
-        assertThrows(IllegalStateException.class, () -> new SysTaskRunner(properties, 0));
-        assertThrows(IllegalStateException.class, () -> new SysTaskRunner(properties, -1));
+        assertThrows(IllegalStateException.class,
+                () -> new SysTaskRunner(storageRoot("upload"), 0, TEST_TASK_DIR));
+        assertThrows(IllegalStateException.class,
+                () -> new SysTaskRunner(storageRoot("upload"), -1, TEST_TASK_DIR));
     }
 
     @Test
     @DisplayName("队列满时调用线程执行任务，执行后恢复调用方数据权限与审计用户")
     void callerRunsRestoresCallerContext() throws Exception {
-        SysTaskRunner runner = new SysTaskRunner(mock(FileStorageProperties.class), 1);
+        SysTaskRunner runner = new SysTaskRunner(storageRoot("upload"), 1, TEST_TASK_DIR);
         CountDownLatch workersStarted = new CountDownLatch(2);
         CountDownLatch releaseWorkers = new CountDownLatch(1);
         AtomicReference<String> taskScope = new AtomicReference<>();

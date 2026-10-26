@@ -18,8 +18,10 @@ package cn.jfspeed.system.controller;
 import cn.dev33.satoken.annotation.SaCheckPermission;
 import cn.hutool.core.util.StrUtil;
 import cn.jfspeed.common.core.base.BaseConstant;
+import cn.jfspeed.common.core.enums.AuthErrorCode;
 import cn.jfspeed.common.core.exception.BusinessException;
 import cn.jfspeed.common.data.base.BaseController;
+import cn.jfspeed.common.security.util.LoginUtil;
 import cn.jfspeed.common.web.domain.dto.R;
 import cn.jfspeed.file.service.FileStorageService;
 import cn.jfspeed.log.annotation.SLog;
@@ -63,14 +65,49 @@ public class SysFileController extends BaseController<SysFileService, SysFile> {
     @SaCheckPermission(orRole = BaseConstant.ROLE_SUPER_ADMIN, value = "system:file:view")
     @Operation(summary = "文件分页列表")
     public R page(SysFileQueryRequest query) {
-        return R.success(service.page(query));
+        return R.success(service.page(query, currentOwnerId()));
+    }
+
+    /**
+     * 当前请求可见的文件归属：超管返回 null（全量），普通用户返回自己的用户 ID。
+     *
+     * <p>⚠️ <b>取不到登录用户时必须拒绝，不能退化成 null</b>：本方法下游把 null 当作
+     * 「不限制归属」，于是 {@code getLoginUserId()} 返回 null（会话失效、Session 里没有 user、
+     * 读取会话抛异常被吞）时，一次会话读取失败就等于给全量文件开了后门——与本轮要堵的
+     * 越权洞同型，只是换了个触发路径。因此「超管」与「身份不可解析」必须分成两条路：
+     * 只有超管才允许 null。
+     */
+    private Long currentOwnerId() {
+        if (LoginUtil.isSuperAdmin()) {
+            return null;
+        }
+        Long userId = LoginUtil.getLoginUserId();
+        if (userId == null) {
+            throw new BusinessException(AuthErrorCode.NOT_LOGIN.getCode(), "登录状态已失效，请重新登录");
+        }
+        return userId;
+    }
+
+    /**
+     * 按 id 取记录并校验归属。
+     *
+     * <p>越权与「记录不存在」必须是同一句提示、同一个分支：否则可以用返回值差异枚举出
+     * 哪些 id 属于别人（{@code /sys/task/download} 用的是同一口径）。
+     */
+    private SysFile getOwnedFile(Long id) {
+        SysFile file = service.getById(id);
+        if (file == null) {
+            return null;
+        }
+        Long ownerId = currentOwnerId();
+        return ownerId == null || ownerId.equals(file.getCreateBy()) ? file : null;
     }
 
     @GetMapping("/download/{id}")
     @SaCheckPermission(orRole = BaseConstant.ROLE_SUPER_ADMIN, value = "system:file:download")
     @Operation(summary = "下载文件")
     public Object download(@PathVariable("id") Long id, HttpServletResponse response) throws IOException {
-        SysFile file = service.getById(id);
+        SysFile file = getOwnedFile(id);
         if (file == null || StrUtil.isBlank(file.getUrl())) {
             // 抛业务异常（HTTP 200 + 业务码 400），由前端 blob 分支统一解析并弹出 message。
             //
@@ -106,7 +143,11 @@ public class SysFileController extends BaseController<SysFileService, SysFile> {
     @SaCheckPermission(orRole = BaseConstant.ROLE_SUPER_ADMIN, value = "system:file:delete")
     @Operation(summary = "删除文件（记录 + 存储文件）")
     public R delete(@PathVariable("id") Long id) {
-        deleteOne(id);
+        SysFile file = getOwnedFile(id);
+        if (file == null) {
+            throw new BusinessException("文件不存在或已清理");
+        }
+        doDelete(file);
         return R.success();
     }
 
@@ -117,16 +158,18 @@ public class SysFileController extends BaseController<SysFileService, SysFile> {
     @Operation(summary = "批量删除文件（记录 + 存储文件）")
     public R deleteBatch(@RequestBody List<Long> ids) {
         if (ids != null) {
-            ids.forEach(this::deleteOne);
+            for (Long id : ids) {
+                // 不属于本人的 id 静默跳过：批量接口逐个报错会把「存在但无权限」暴露成可枚举信号
+                SysFile file = getOwnedFile(id);
+                if (file != null) {
+                    doDelete(file);
+                }
+            }
         }
         return R.success();
     }
 
-    private void deleteOne(Long id) {
-        SysFile file = service.getById(id);
-        if (file == null) {
-            return;
-        }
+    private void doDelete(SysFile file) {
         // 先删存储再删记录：顺序反过来时存储删除失败会留下永远无人引用的孤儿文件
         try {
             fileStorageService.delete(file.getUrl());
@@ -134,6 +177,6 @@ public class SysFileController extends BaseController<SysFileService, SysFile> {
             log.warn("删除存储文件失败：{}", file.getUrl(), e);
             throw new BusinessException("删除存储文件失败，记录未删除，请稍后重试");
         }
-        service.removeById(id);
+        service.removeById(file.getId());
     }
 }

@@ -103,7 +103,9 @@ public class SysMenuService extends BaseService<SysMenuMapper, SysMenu>{
 
     private void clearPermissionCaches() {
         sysRoleMenuService.clearAllRoleCache();
-        RedisUtil.del(CACHE_ALL_BTN_PERM);
+        // 与角色缓存同批挂到事务提交后：菜单行在提交前对其它读事务仍是旧值，
+        // 此刻删键会被并发鉴权请求用旧权限回填，并存活到 TTL 到期。
+        SysRoleMenuService.deferAfterCommit(() -> RedisUtil.del(CACHE_ALL_BTN_PERM));
     }
 
     @Override

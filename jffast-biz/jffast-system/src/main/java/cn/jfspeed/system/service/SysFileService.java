@@ -38,10 +38,22 @@ public class SysFileService extends BaseService<SysFileMapper, SysFile> {
      * 文件分页列表
      */
     public PageRes<SysFile> page(SysFileQueryRequest query) {
+        return page(query, null);
+    }
+
+    /**
+     * 文件分页列表（ownerId 非空时仅返回该用户登记的记录）
+     *
+     * <p>没有这一层过滤时，任何拿到 {@code system:file:view} 的人都能在一页里看到别人上传文件的
+     * id 与 url，而 url 经 {@code /upload/**} 免登录静态映射可直接下载——查看权限于是变成了
+     * 全量文件的读取权限。归属口径与 {@link SysTaskService#page} 一致，按 create_by 隔离。
+     */
+    public PageRes<SysFile> page(SysFileQueryRequest query, Long ownerId) {
         LambdaQueryWrapper<SysFile> queryWrapper = new LambdaQueryWrapper<>();
         queryWrapper.like(StrUtil.isNotBlank(query.getFileName()), SysFile::getFileName, query.getFileName());
         queryWrapper.eq(StrUtil.isNotBlank(query.getBizType()), SysFile::getBizType, query.getBizType());
         queryWrapper.eq(StrUtil.isNotBlank(query.getStorageType()), SysFile::getStorageType, query.getStorageType());
+        queryWrapper.eq(ownerId != null, SysFile::getCreateBy, ownerId);
         queryWrapper.orderByDesc(SysFile::getCreateTime);
         Page<SysFile> page = this.page(query.getPage(), queryWrapper);
         return PageUtil.resultPageMp(page);

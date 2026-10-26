@@ -267,7 +267,7 @@ public class JobScheduler implements CommandLineRunner, DisposableBean {
             }
         }
         // 反向对账：清掉"数据库已不再需要"的孤儿触发器（改名 / 改组 / 删除 / 转归属 / 手工改库）
-        removed += orphanCleanup(desired);
+        removed += orphanCleanup(desired, rows);
         firstSyncDone = true;
         if (scheduled > 0 || removed > 0) {
             log.info("【定时任务】同步完成：服务={} 共 {} 条；本次调度/改动 {} 条、清理 {} 条；"
@@ -286,18 +286,33 @@ public class JobScheduler implements CommandLineRunner, DisposableBean {
      * <p>为什么必须有：Quartz 的 JobKey = `jobName + jobGroup`，任务一改名/改组，旧触发器就与数据库**失去关联**
      * ——正向遍历数据库永远发现不了它，于是它会一直按老定义（含老 cron、老 `invokeTarget`）继续触发。
      *
+     * <p>⚠️ 清理范围必须限在"数据库里查无此行"的键上：{@code listJobKeys()} 走的是
+     * {@code GroupMatcher.anyJobGroup()}，共享同一套 QRTZ_ 表的多服务部署里它返回的是**所有服务**的任务。
+     * 只跟本服务的 desired 比差集时，A 服务一轮对账就能把 B 服务刚排好的触发器当孤儿删掉，
+     * 而且删除落在共享表上，B 重启也找不回来。现在凡是任务表仍有对应行的键一律放行，交给归属它的服务管。
+     *
      * @param desired 本进程当前**应当**存在的任务标识集合
+     * @param rows    任务表全量行，用于判断某个 JobKey 是否仍被任何服务需要
      */
-    private int orphanCleanup(Set<JobKey> desired) {
+    private int orphanCleanup(Set<JobKey> desired, List<JobRecord> rows) {
         int cleaned = 0;
+        Set<JobKey> referenced = new HashSet<>();
+        for (JobRecord row : rows) {
+            referenced.add(JobKey.jobKey(row.getJobName(), row.getJobGroup()));
+        }
         try {
             for (JobKey key : quartzManager.listJobKeys()) {
                 if (desired.contains(key)) {
                     continue;
                 }
+                if (referenced.contains(key)) {
+                    // 任务表里还有这一行：要么归别的服务，要么本服务不该跑（正向对账已删），都不是孤儿
+                    log.debug("【定时任务】触发器 {}.{} 仍被任务表引用，不由本服务清理", key.getGroup(), key.getName());
+                    continue;
+                }
                 quartzManager.deleteJob(key.getName(), key.getGroup());
                 cleaned++;
-                log.warn("【定时任务】清理孤儿触发器（数据库中已无对应任务或已转归属/暂停）: {}.{}",
+                log.warn("【定时任务】清理孤儿触发器（任务表已无对应行）: {}.{}",
                         key.getGroup(), key.getName());
             }
         } catch (Exception e) {
@@ -337,8 +352,11 @@ public class JobScheduler implements CommandLineRunner, DisposableBean {
      * <p>只有归属本服务的任务才能触发 —— 任务方法是反射调用的 Bean，本服务不一定有它。
      * <p>⚠️ 抛 {@link IllegalStateException} 而不是业务异常，是因为本类在 Starter 里、不依赖 `jffast-common`；
      * 页面侧（`SysJobService.triggerJob`）会先做归属预检并把它转成 `BusinessException`，用户看到的是可读提示。
+     * <p>与 {@link #sync()} 同锁：本方法要"先补建 JobDetail、再触发"，两步之间若插进一轮对账，
+     * 对账可能正好把这个 JobKey 删掉（任务刚被暂停/改名时就会撞上）。表现是点了"执行"什么也没跑，
+     * 而 Quartz 的 `triggerJob` 对不存在的 JobKey 不报错，所以日志里连失败都看不到。
      */
-    public void triggerNow(JobRecord row) {
+    public synchronized void triggerNow(JobRecord row) {
         if (!canRunHere(row)) {
             throw new IllegalStateException("任务「" + row.getJobName() + "」归属 " + describeOwner(row)
                     + "，本服务（" + appName + "）不执行它");

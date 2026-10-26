@@ -69,8 +69,17 @@ public class JfFastMybatisAutoConfiguration {
         return new AutoFillHandler();
     }
 
+    /**
+     * 数据权限拦截器 —— **默认装配**，只有显式 {@code jffast.mybatis.data-scope.enabled=false} 才关掉。
+     *
+     * <p>{@code matchIfMissing} 原本取 {@code false}：漏配这一行不报错、不告警，表现是
+     * {@code @DataPermission} 照常把 SQL 片段写进 {@link DataScopeContext}，却没有任何拦截器去消费它，
+     * 于是"配了数据权限的用户仍能看到全表"。Base 只在单体 {@code application.yml} 里写了这行，
+     * cloud 的三个服务都没写 —— 同一套代码切到 cloud 形态，数据权限就整体静默失效。
+     * 安全开关的缺省值必须是"开着"，漏配最多是部署方显式关掉。
+     */
     @Bean
-    @ConditionalOnProperty(prefix = "jffast.mybatis.data-scope", name = "enabled", havingValue = "true", matchIfMissing = false)
+    @ConditionalOnProperty(prefix = "jffast.mybatis.data-scope", name = "enabled", havingValue = "true", matchIfMissing = true)
     public DataScopeInnerInterceptor dataScopeInnerInterceptor() {
         return new DataScopeInnerInterceptor();
     }

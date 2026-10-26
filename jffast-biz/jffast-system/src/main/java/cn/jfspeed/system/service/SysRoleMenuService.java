@@ -26,6 +26,8 @@ import cn.jfspeed.system.entity.SysRoleMenu;
 import cn.jfspeed.system.mapper.SysRoleMenuMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.util.List;
 import java.util.Objects;
@@ -87,14 +89,38 @@ public class SysRoleMenuService extends ServiceImpl<SysRoleMenuMapper, SysRoleMe
      * 清除角色权限缓存：TTL 缓存键 + 历史无 TTL 哈希字段 + 全量菜单 ID 哈希字段。
      * <p>历史版本把权限写进无 TTL 的 hash，角色绑定变更后旧值永久命中；
      * 这里一并删除，保证升级后旧缓存自然失效。</p>
+     *
+     * <p>失效动作推迟到事务提交之后。原先在事务内删除，本方事务尚未提交时旧绑定对其它
+     * 读事务仍然可见，被清空后立刻到来的读请求会把旧权限重新写回缓存，并存活整个
+     * TTL（3600 秒）——权限收紧看起来"没生效"就是这么来的。事务外调用则立即执行。</p>
      */
     public void clearRoleCache(Long roleId) {
         if (roleId == null) {
             return;
         }
+        deferAfterCommit(() -> evictRole(roleId));
+    }
+
+    private void evictRole(Long roleId) {
         RedisUtil.del(CACHE_ROLE_PERMS + roleId);
         RedisUtil.hdel(BaseConstant.CACHE_ROLE_PERM_LIST, String.valueOf(roleId));
         RedisUtil.hdel(BaseConstant.CACHE_ALL_MENU_ID_LIST, String.valueOf(roleId));
+    }
+
+    /**
+     * 有事务时把动作挂到提交后，无事务时直接执行（与 SysNotificationService 的外部投递同一口径）。
+     */
+    static void deferAfterCommit(Runnable action) {
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    action.run();
+                }
+            });
+        } else {
+            action.run();
+        }
     }
 
     /** 兼容旧调用名 */
@@ -103,9 +129,14 @@ public class SysRoleMenuService extends ServiceImpl<SysRoleMenuMapper, SysRoleMe
     }
 
     /**
-     * 清除所有角色权限缓存（菜单定义变更时调用）
+     * 清除所有角色权限缓存（菜单定义变更时调用）。
+     * <p>同 {@link #clearRoleCache}：挂到事务提交后，避免提交前的空窗被旧数据回填。</p>
      */
     public void clearAllRoleCache() {
+        deferAfterCommit(this::evictAllRoles);
+    }
+
+    private void evictAllRoles() {
         String[] keys = RedisUtil.allKey(CACHE_ROLE_PERMS + "*");
         if (keys != null && keys.length > 0) {
             RedisUtil.del(keys);

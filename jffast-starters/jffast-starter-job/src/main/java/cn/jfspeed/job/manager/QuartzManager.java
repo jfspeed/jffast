@@ -126,8 +126,13 @@ public class QuartzManager {
                                 Map<String, Object> params) throws SchedulerException {
         JobKey jobKey = JobKey.jobKey(jobName, jobGroup);
         if (scheduler.checkExists(jobKey)) {
-            refreshJobDataMap(jobKey, params);
-            return;
+            JobDetail existing = scheduler.getJobDetail(jobKey);
+            if (existing != null) {
+                refreshJobDataMap(jobKey, existing, params);
+                return;
+            }
+            // checkExists 说在、getJobDetail 却读不到：JDBC jobstore 下并发删除/集群视图短暂不一致都会这样。
+            // 此时必须补建，否则「立即执行」静默变成空操作——按钮点了没反应，日志里一个字都没有。
         }
         JobDetail jobDetail = JobBuilder.newJob(jobClass)
                 .withIdentity(jobName, jobGroup)
@@ -145,12 +150,8 @@ public class QuartzManager {
      * <p>{@code addJob(jobDetail, true)} 只替换 JobDetail，**不影响已挂在其上的触发器** ——
      * 所以「立即执行」能立刻用上新目标，而定时排期不受干扰。
      */
-    private void refreshJobDataMap(JobKey jobKey, Map<String, Object> params) throws SchedulerException {
+    private void refreshJobDataMap(JobKey jobKey, JobDetail existing, Map<String, Object> params) throws SchedulerException {
         if (params == null || params.isEmpty()) {
-            return;
-        }
-        JobDetail existing = scheduler.getJobDetail(jobKey);
-        if (existing == null) {
             return;
         }
         boolean changed = params.entrySet().stream()

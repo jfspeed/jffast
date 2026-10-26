@@ -30,6 +30,7 @@ import net.sf.jsqlparser.expression.operators.conditional.AndExpression;
 import net.sf.jsqlparser.parser.CCJSqlParserUtil;
 import net.sf.jsqlparser.schema.Table;
 import net.sf.jsqlparser.statement.select.FromItem;
+import net.sf.jsqlparser.statement.select.ParenthesedSelect;
 import net.sf.jsqlparser.statement.select.PlainSelect;
 import net.sf.jsqlparser.statement.select.Select;
 import net.sf.jsqlparser.statement.select.SetOperationList;
@@ -113,18 +114,41 @@ public class DataScopeInnerInterceptor extends JsqlParserSupport implements Inne
         return null;
     }
 
+    /**
+     * 把数据权限片段注入这条 SELECT 的**每一个可注入分支**。
+     *
+     * <p>旧实现只认 {@code PlainSelect} 和顶层的 {@code SetOperationList}，其余形状一律"什么都不做"。
+     * 而"什么都不做"在这里不是中性分支，而是<b>放行一条完全不过滤的 SQL</b>：
+     * 括号包起来的 UNION 分支（{@code (select ...) union (select ...)}）在解析树里是
+     * {@code ParenthesedSelect} 而不是 {@code PlainSelect}，于是被括号包那一支查的是全表。
+     * 现在递归下钻到每个分支；仍然识别不了的形状直接拒绝查询 ——
+     * 与同一个类里"解析失败即拒绝"的口径一致：宁可错杀一条写得不常见的 SQL，
+     * 也不能让越权数据静默流出去。
+     */
     @Override
     protected void processSelect(Select select, int index, String sql, Object obj) {
-        if (select.getSelectBody() instanceof PlainSelect) {
-            processPlainSelect((PlainSelect) select.getSelectBody());
-        } else if (select.getSelectBody() instanceof SetOperationList) {
-            SetOperationList setOpList = (SetOperationList) select.getSelectBody();
-            for (Select body : setOpList.getSelects()) {
-                if (body instanceof PlainSelect) {
-                    processPlainSelect((PlainSelect) body);
-                }
-            }
+        injectInto(select);
+    }
+
+    private void injectInto(Select select) {
+        if (select instanceof PlainSelect) {
+            processPlainSelect((PlainSelect) select);
+            return;
         }
+        if (select instanceof SetOperationList) {
+            SetOperationList setOpList = (SetOperationList) select;
+            for (Select body : setOpList.getSelects()) {
+                injectInto(body);
+            }
+            return;
+        }
+        if (select instanceof ParenthesedSelect) {
+            injectInto(((ParenthesedSelect) select).getSelect());
+            return;
+        }
+        log.error("Unsupported select shape for dataScope injection: {}, query rejected",
+                select == null ? "null" : select.getClass().getName());
+        throw new BusinessException(AuthErrorCode.FORBIDDEN.getCode(), "数据权限校验失败，已拒绝查询");
     }
 
     private void processPlainSelect(PlainSelect plainSelect) {

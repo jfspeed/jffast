@@ -39,6 +39,9 @@ import java.util.stream.Collectors;
 @Slf4j
 public class LoginUtil {
 
+    /** 角色菜单 ID 缓存的存活秒数，与 SysRoleMenuService 的权限缓存 TTL 保持同口径 */
+    private static final long MENU_ID_CACHE_TTL_SECONDS = 3600L;
+
     @SuppressWarnings("unchecked")
     private static <T> T redisHget(String key, String field) {
         try {
@@ -53,10 +56,22 @@ public class LoginUtil {
         }
     }
 
-    private static void redisHset(String key, String field, Object value) {
+    /**
+     * 写哈希字段，{@code ttlSeconds > 0} 时同时给整个哈希键续期。
+     *
+     * <p>菜单 ID 缓存必须带 TTL：绑定的权威存储在 sys_role_menu，Redis 里的字段只是加速副本。
+     * 无 TTL 的字段一旦因任何路径漏删而残留就会永久命中旧绑定——权限收紧在鉴权上永远不生效，
+     * 且没有自愈时间。带 TTL 后漏删最坏只影响一个周期。</p>
+     */
+    private static void redisHset(String key, String field, Object value, long ttlSeconds) {
         try {
             Class<?> redisUtilClass = Class.forName("cn.jfspeed.redis.util.RedisUtil");
             Object redisUtil = SpringUtil.getBean(redisUtilClass);
+            if (ttlSeconds > 0L) {
+                redisUtilClass.getMethod("hset", String.class, String.class, Object.class, long.class)
+                        .invoke(redisUtil, key, field, value, ttlSeconds);
+                return;
+            }
             redisUtilClass.getMethod("hset", String.class, String.class, Object.class).invoke(redisUtil, key, field, value);
         } catch (ClassNotFoundException ignored) {
         } catch (Exception e) {
@@ -214,7 +229,7 @@ public class LoginUtil {
                     Object service = SpringUtil.getBean(serviceClass);
                     List<Long> menuids = (List<Long>) serviceClass.getMethod("listAllMenuIdList", Long.class).invoke(service, roleId);
                     menuIdList.addAll(menuids);
-                    redisHset(BaseConstant.CACHE_ALL_MENU_ID_LIST, roleId + "", menuids);
+                    redisHset(BaseConstant.CACHE_ALL_MENU_ID_LIST, roleId + "", menuids, MENU_ID_CACHE_TTL_SECONDS);
                 } catch (ClassNotFoundException e) {
                     log.warn("SysRoleMenuService not available");
                 } catch (Exception e) {

@@ -45,14 +45,18 @@ public class SysTaskRunner {
 
     private final ThreadPoolExecutor executor;
 
-    private final FileStorageProperties fileStorageProperties;
+    /**
+     * 任务产物落盘目录（构造期固化并校验，见 {@link #taskDir()}）。
+     */
+    private final Path taskDir;
 
     public SysTaskRunner(FileStorageProperties fileStorageProperties,
-                         @Value("${jffast.system.task.queue-capacity:100}") int queueCapacity) {
+                         @Value("${jffast.system.task.queue-capacity:100}") int queueCapacity,
+                         @Value("${jffast.system.task.file-dir:task-files}") String taskFileDir) {
         if (queueCapacity <= 0) {
             throw new IllegalStateException("jffast.system.task.queue-capacity 必须大于 0，当前值：" + queueCapacity);
         }
-        this.fileStorageProperties = fileStorageProperties;
+        this.taskDir = resolveTaskDir(fileStorageProperties, taskFileDir);
         AtomicInteger threadIndex = new AtomicInteger(1);
         this.executor = new ThreadPoolExecutor(2, 2, 60, TimeUnit.SECONDS,
                 new ArrayBlockingQueue<>(queueCapacity),
@@ -100,11 +104,35 @@ public class SysTaskRunner {
     }
 
     /**
-     * 任务文件落盘目录（本地存储目录下 task 子目录），不存在则创建
+     * 任务文件落盘目录，不存在则创建。目录在构造期解析一次（见 {@link #resolveTaskDir}），
+     * 这里只负责补建缺失的父目录。
      */
     public Path taskDir() throws IOException {
-        Path dir = Paths.get(fileStorageProperties.getLocal().getPath(), "task");
-        Files.createDirectories(dir);
+        Files.createDirectories(taskDir);
+        return taskDir;
+    }
+
+    /**
+     * 解析并校验任务产物目录：必须落在本地存储根目录**之外**。
+     *
+     * <p>存储根（{@code jffast.file.storage.local.path}）被 {@code WebMvcConfig} 整体映射成
+     * {@code /upload/**}，而 {@code SaTokenConfig} 把 {@code /upload/**} 列为免登录白名单——
+     * 于是根目录里的每个文件都等于对外公开可下载。任务产物是异步导出的用户数据（手机号、邮箱）
+     * 和管理员上传的待导入文件，一旦落在根内，持有 taskId 者无需登录即可取走整份表格，
+     * 归属校验（{@code /sys/task/download}）被完全绕过。
+     *
+     * <p>因此这里选择启动即失败，而不是运行时静默泄露：配错的人当场收到可执行的提示，
+     * 而不是等到数据被别人下走。
+     */
+    private static Path resolveTaskDir(FileStorageProperties fileStorageProperties, String taskFileDir) {
+        Path dir = Paths.get(taskFileDir).toAbsolutePath().normalize();
+        Path storageRoot = Paths.get(fileStorageProperties.getLocal().getPath())
+                .toAbsolutePath().normalize();
+        if (dir.startsWith(storageRoot)) {
+            throw new IllegalStateException("jffast.system.task.file-dir 不能位于文件存储根 " + storageRoot
+                    + " 之内（当前值：" + dir + "）。存储根经 /upload/** 免登录静态对外提供，"
+                    + "任务产物落在里面等于公开下载；请改到根目录之外的独立目录，并在反向代理里禁止该目录对外访问。");
+        }
         return dir;
     }
 

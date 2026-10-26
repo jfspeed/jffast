@@ -220,24 +220,21 @@ public class SysLoginController {
             }
 
             // 检查是否需要验证码（登录失败 >= 2 次时需要）
-            if (RedisUtil.hasKey(BaseConstant.CACHE_ERROR_COUNT+userName)){
-                int errorNum = Integer.parseInt(RedisUtil.hget(BaseConstant.CACHE_ERROR_COUNT+userName,"errorNum").toString());
-                if (errorNum >= 2) {
-                    String code = loginDTO.getCode();
-                    String key = loginDTO.getKey();
-                    if (StrUtil.isBlank(code) || StrUtil.isBlank(key)) {
-                        return R.error("请输入图形验证码");
-                    }
-                    String cachedCode = RedisUtil.get(BaseConstant.CACHE_VER_CODE+key);
-                    if (cachedCode == null) {
-                        return R.error("验证码已失效，请重新获取");
-                    }
-                    if (!code.equalsIgnoreCase(cachedCode)) {
-                        return R.error("验证码错误");
-                    }
-                    // 验证码使用后立即删除，防止重放
-                    RedisUtil.del(BaseConstant.CACHE_VER_CODE+key);
+            if (currentErrorNum(BaseConstant.CACHE_ERROR_COUNT + userName) >= 2) {
+                String code = loginDTO.getCode();
+                String key = loginDTO.getKey();
+                if (StrUtil.isBlank(code) || StrUtil.isBlank(key)) {
+                    return R.error("请输入图形验证码");
                 }
+                String cachedCode = RedisUtil.get(BaseConstant.CACHE_VER_CODE+key);
+                if (cachedCode == null) {
+                    return R.error("验证码已失效，请重新获取");
+                }
+                if (!code.equalsIgnoreCase(cachedCode)) {
+                    return R.error("验证码错误");
+                }
+                // 验证码使用后立即删除，防止重放
+                RedisUtil.del(BaseConstant.CACHE_VER_CODE+key);
             }
 
             // 用带时间戳校验的解密：拒绝过期的登录报文（防重放）
@@ -313,12 +310,7 @@ public class SysLoginController {
         if (ipLimiter != null) {
             ipLimiter.check(request, IpRateLimiter.SCENE_CAPTCHA_CHECK);
         }
-        boolean need = false;
-        if (RedisUtil.hasKey(BaseConstant.CACHE_ERROR_COUNT+userName)){
-            int errorNum = Integer.parseInt(RedisUtil.hget(BaseConstant.CACHE_ERROR_COUNT+userName,"errorNum").toString());
-            // 失败 2 次及以上需要验证码
-            need = errorNum >= 2;
-        }
+        boolean need = currentErrorNum(BaseConstant.CACHE_ERROR_COUNT + userName) >= 2;
         return R.success(need);
     }
 
@@ -361,19 +353,46 @@ public class SysLoginController {
         return R.success(publicKey);
     }
 
+    /**
+     * 失败计数是否已触发锁定。
+     *
+     * <p>口径必须是「达到或超过」，不能是「刚好等于」：hincr 在并发下会跳号，运维把阈值改小也会让
+     * 存量计数直接越过上限。用 {@code ==} 判等时，这两条路径都永不命中，锁定提示与计数重置双双失效，
+     * 表现是计数单调增长、每次失败都把解锁时间往后推——合法用户被永久锁死，文案还会算出
+     * 「剩余次数: -3」。
+     */
+    static boolean reachedLimit(int errorNum, int maxErrorCount) {
+        return errorNum >= maxErrorCount;
+    }
+
+    /**
+     * 读取当前登录失败次数；没有计数返回 0。
+     *
+     * <p>刻意不用 {@code RedisUtil.hasKey} 判存在：hasKey 把连接异常吞成 false，于是
+     * 「Redis 抖一下」就等于「本轮不需要验证码」，而暴破正好挑这一秒发起。以 hget 的结果为准后，
+     * 读不到字段就是真没有计数，连不上 Redis 则由 hget 抛出、由登录接口的外层 catch 转成失败，
+     * 防护门槛不会因为基础设施抖动而失效开放。
+     */
+    private int currentErrorNum(String countKey) {
+        Object errorNum = RedisUtil.hget(countKey, "errorNum");
+        return errorNum == null ? 0 : Integer.parseInt(errorNum.toString());
+    }
+
     private boolean lockedUser(long currentTime, String userName, int maxErrorCount){
-        boolean flag = false;
-        if (RedisUtil.hasKey(BaseConstant.CACHE_ERROR_COUNT+userName)){
-            long loginTime = Long.parseLong(RedisUtil.hget(BaseConstant.CACHE_ERROR_COUNT+userName, "loginTime").toString());
-            int i = Integer.parseInt(RedisUtil.hget(BaseConstant.CACHE_ERROR_COUNT+userName,"errorNum").toString());
-            if (i >= maxErrorCount && currentTime < loginTime){
-                Duration between = LocalDateTimeUtil.between(LocalDateTimeUtil.of(currentTime), LocalDateTimeUtil.of(loginTime));
-                throw new BusinessException(SystemErrorCode.ACCOUNT_LOCKED.getCode(),"账号锁定中，还没到允许登录的时间，请"+between.toMinutes()+"分钟后再尝试");
-            }else{
-                flag = true;
-            }
+        String countKey = BaseConstant.CACHE_ERROR_COUNT + userName;
+        Object errorNum = RedisUtil.hget(countKey, "errorNum");
+        Object loginTime = RedisUtil.hget(countKey, "loginTime");
+        // 计数尚未建立（或只剩半个字段）时不算锁定，交给后面的分支重新起算
+        if (errorNum == null || loginTime == null) {
+            return false;
         }
-        return flag;
+        int i = Integer.parseInt(errorNum.toString());
+        long unlockAt = Long.parseLong(loginTime.toString());
+        if (reachedLimit(i, maxErrorCount) && currentTime < unlockAt) {
+            Duration between = LocalDateTimeUtil.between(LocalDateTimeUtil.of(currentTime), LocalDateTimeUtil.of(unlockAt));
+            throw new BusinessException(SystemErrorCode.ACCOUNT_LOCKED.getCode(),"账号锁定中，还没到允许登录的时间，请"+between.toMinutes()+"分钟后再尝试");
+        }
+        return true;
     }
 
     /**
@@ -430,23 +449,31 @@ public class SysLoginController {
             }
 
             boolean flag = lockedUser(currentTime, userName, maxErrorCount);
-
-            if (RedisUtil.hasKey(BaseConstant.CACHE_ERROR_COUNT+userName)){
-                int i = Integer.parseInt(RedisUtil.hget(BaseConstant.CACHE_ERROR_COUNT+userName,"errorNum").toString());
-                if (flag && i==maxErrorCount){
-                    RedisUtil.hset(BaseConstant.CACHE_ERROR_COUNT+userName,"errorNum",1);
-                }else {
-                    RedisUtil.hincr(BaseConstant.CACHE_ERROR_COUNT+userName,"errorNum",1);
-                }
-                RedisUtil.hset(BaseConstant.CACHE_ERROR_COUNT+userName,"loginTime",timeStamp);
-            }else {
+            String countKey = BaseConstant.CACHE_ERROR_COUNT + userName;
+            // 计数键的存活时间 = 锁定窗口：让计数随窗口自然过期，而不是等一次成功登录才清
+            long countTtlSeconds = (timeStamp - currentTime) / 1000;
+            int i;
+            if (!flag) {
                 Map<String,Object> map = new HashMap<>();
                 map.put("errorNum",1);
                 map.put("loginTime",timeStamp);
-                RedisUtil.hmset(BaseConstant.CACHE_ERROR_COUNT+userName, map, -1);
+                RedisUtil.hmset(countKey, map, countTtlSeconds);
+                i = 1;
+            } else {
+                int previous = currentErrorNum(countKey);
+                if (reachedLimit(previous, maxErrorCount)) {
+                    // 走到这里说明上一轮已达上限且锁定窗口已过（lockedUser 未抛异常）：重新起算，
+                    // 而不是在上次的基础上继续加——否则计数只增不减，用户永远解不开。
+                    RedisUtil.hset(countKey, "errorNum", 1);
+                    i = 1;
+                } else {
+                    RedisUtil.hincr(countKey, "errorNum", 1);
+                    i = previous + 1;
+                }
+                RedisUtil.hset(countKey, "loginTime", timeStamp);
+                RedisUtil.expire(countKey, countTtlSeconds);
             }
-            int i = Integer.parseInt(RedisUtil.hget(BaseConstant.CACHE_ERROR_COUNT+userName,"errorNum").toString());
-            if (i==maxErrorCount){
+            if (reachedLimit(i, maxErrorCount)){
                 throw new BusinessException(SystemErrorCode.ACCOUNT_LOCKED.getCode(),"您的密码已错误"+maxErrorCount+"次，现已被锁定，"+str+"分钟后再尝试");
             }
             throw new BusinessException(SystemErrorCode.PASSWORD_ERROR.getCode(),"用户名或密码错误，总登录次数"+maxErrorCount+"次，剩余次数: " + (maxErrorCount-i));
