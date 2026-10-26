@@ -41,8 +41,10 @@ import java.util.List;
  *
  * <p><b>归属规则</b>：任务的执行者是 `sys_job.service_name`。注解登记的任务，
  * 其归属自动 = 声明它的服务名（`spring.application.name`）；**只有归属服务会调度它**。
- * 归属为空的（老数据 / 页面手工新建的）由 {@code scheduler.default-scope=true} 的那个服务执行 ——
- * 单体只有一个进程，保持 true 即可；多服务部署时通常只让系统服务为 true。
+ * 归属为空的（老数据 / 页面手工新建的）由 {@code scheduler.default-scope=true} 的服务**认领** ——
+ * 认领结果写回 {@code service_name}，且认领是**有竞争**的（库里靠 {@code AND service_name IS NULL}
+ * 保证只有一个赢家），**认领失败的服务不排期** ⇒ 多个服务同时打开也不会把同一个任务执行两次。
+ * 单体只有一个进程，保持 true 即可。
  *
  * @author jffast
  */
@@ -67,8 +69,9 @@ public class JobProperties {
 
         /**
          * 是否调度「无归属」任务（`service_name IS NULL`）。
-         * <p>默认 false：多服务部署里"谁都能跑"正是重复执行的根源；
-         * 需要兼容单体 / 历史数据时，由指定的"默认调度者"显式打开。
+         * <p>默认 false：打开它意味着本服务会接手**跑得动**的无归属任务（调用目标的 Bean
+         * 在本进程 classpath 里），多服务部署时由指定的"默认调度者"显式打开即可。
+         * <p>多个服务同时打开也是安全的 —— 认领有竞争（只有一个赢家），认领失败者不排期。
          */
         private boolean defaultScope = false;
 
