@@ -1,0 +1,13 @@
+logging:
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} %clr(%5p) %clr([${spring.application.name:-},%X{traceId:-},%X{spanId:-}]){faint} %clr(%-40.40logger{39}){cyan} %clr(:){faint} %m%n%wEx"
+    file: "%d{yyyy-MM-dd HH:mm:ss.SSS} %5p [${spring.application.name:-},%X{traceId:-},%X{spanId:-}] %-40.40logger{39} : %m%n%wEx"
+  file:
+    name: ${LOG_FILE:logs/${spring.application.name:-jffast}.log}
+  logback:
+    rollingpolicy:
+      file-name-pattern: ${LOG_FILE:logs/${spring.application.name:-jffast}.log}.%d{yyyy-MM-dd}.%i.gz
+      max-file-size: 100MB
+      max-history: 30
+      total-size-cap: 10GB
+      clean-history-on-start: false

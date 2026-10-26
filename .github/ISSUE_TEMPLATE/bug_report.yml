@@ -1,0 +1,52 @@
+name: 缺陷反馈
+description: 提交一个可复现的问题
+title: '[Bug] '
+labels: ['bug']
+body:
+  - type: markdown
+    attributes:
+      value: |
+        提交前请先搜索是否已有相同问题。填写越具体，修复越快。
+  - type: textarea
+    id: description
+    attributes:
+      label: 问题描述
+      description: 发生了什么？你期望的结果是什么？
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: 复现步骤
+      placeholder: |
+        1. 进入 ...
+        2. 点击 ...
+        3. 出现 ...
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: 版本
+      description: 分支名或 commit 号
+      placeholder: main@a47903f
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: 运行环境
+      placeholder: |
+        JDK:
+        Maven:
+        数据库:
+        浏览器:
+        操作系统:
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: 异常日志
+      description: 粘贴完整堆栈，敏感信息请自行脱敏
+      render: shell

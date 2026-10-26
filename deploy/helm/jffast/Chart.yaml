@@ -1,0 +1,31 @@
+apiVersion: v2
+name: jffast
+description: |
+  疾风（jffast）Base 后端 Helm Chart。
+  部署 jffast-boot 应用，可选启用 MySQL / Redis 子 chart。
+type: application
+version: 0.1.0
+appVersion: "1.0.0-SNAPSHOT"
+home: https://github.com/summerZstar/jffast
+sources:
+  - https://github.com/summerZstar/jffast
+maintainers:
+  - name: jffast
+    url: https://github.com/summerZstar/jffast
+keywords:
+  - jffast
+  - spring-boot
+  - admin
+  - framework
+icon: https://raw.githubusercontent.com/summerZstar/jffast-ui/master/public/img/logo.png
+dependencies:
+  - name: mysql
+    version: "11.1.2"
+    repository: "https://charts.bitnami.com/bitnami"
+    condition: mysql.enabled
+    alias: mysql
+  - name: redis
+    version: "20.0.5"
+    repository: "https://charts.bitnami.com/bitnami"
+    condition: redis.enabled
+    alias: redis

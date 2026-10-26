@@ -1,0 +1,33 @@
+# 控制「后端镜像」的构建上下文体积：docker build 会把整个 jffast/ 目录发给 daemon，
+# 不排除这些目录时一次上下文就要几百 MB（target/ 与 .git 占绝大部分）。
+#
+# 注意：这里**不能**排除任何 src / pom.xml —— 后端是多模块 Maven 工程，
+# jffast-boot 依赖 common / starters / biz，缺一个模块就编译失败。
+
+.git
+.gitignore
+.github
+.idea
+.vscode
+*.iml
+
+# 各模块的编译产物
+target/
+**/target/
+
+# 与本镜像无关的内容（镜像只需要源码与 pom，文档与编排不进构建上下文）
+deploy/
+docs/
+*.md
+!README.md
+
+# 本机 / CI 残留
+*.log
+logs/
+.DS_Store
+
+# 本机运行时产物：upload/ 是本地文件存储落盘目录（实测有真实上传文件），
+# _e2e-logs/ 按 .gitignore 自述「含本机路径与临时端口」——
+# 两者都不该进构建上下文（COPY . . 会把它们送进 builder 层与构建缓存）。
+upload/
+_e2e-logs/

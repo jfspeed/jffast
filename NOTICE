@@ -1,0 +1,87 @@
+jffast - Spring Boot Backend Framework
+Copyright 2024-2026 jffast
+
+This product includes software developed by:
+- Sa-Token (https://sa-token.cc/) - Apache 2.0
+- MyBatis-Plus (https://baomidou.com/) - Apache 2.0
+- MyBatis (https://mybatis.org/mybatis-3/) - Apache 2.0
+- Flowable (https://www.flowable.com/) - Apache 2.0
+- springdoc-openapi (https://springdoc.org/) - Apache 2.0
+- Swagger UI / webjars (https://swagger.io/) - Apache 2.0
+- Spring Boot / Spring Framework (https://spring.io/) - Apache 2.0
+- Spring Data / Spring Security / Spring Session - Apache 2.0
+- Reactor (https://projectreactor.io/) - Apache 2.0
+- Netty (https://netty.io/) - Apache 2.0
+- Tomcat (https://tomcat.apache.org/) - Apache 2.0
+- Quartz (https://www.quartz-scheduler.org/) - Apache 2.0
+- Micrometer / Prometheus (https://micrometer.io/) - Apache 2.0
+- Brave / Zipkin (https://zipkin.io/) - Apache 2.0
+- Resilience4j (https://resilience4j.readme.io/) - Apache 2.0
+- Apache POI (https://poi.apache.org/) - Apache 2.0
+- Commons IO / Codec / Lang3 / Collections4 / Compress / Math3 / Pool2 - Apache 2.0
+- Guava (https://github.com/google/guava) - Apache 2.0
+- Caffeine / Ehcache - Apache 2.0
+- Lettuce / Redis (https://github.com/redis/lettuce) - Apache 2.0
+- OkHttp / Okio (https://square.github.io/okhttp/) - Apache 2.0
+- MinIO Java SDK (https://min.io/docs/minio/linux/developers/java/API.html) - Apache 2.0
+- Hutool (https://hutool.cn/) - Apache 2.0
+- FastExcel (https://github.com/fastexcel-org/fastexcel) - Apache 2.0
+- JSQLParser (https://github.com/JSQLParser/JSqlParser) - LGPL 2.1 OR Apache 2.0
+- Lombok (https://projectlombok.org/) - MIT
+- Yitter IdGenerator (https://github.com/yitter/idgenerator) - MIT
+- Bopomofo4j (https://github.com/rnkrsoft/bopomofo4j) - Apache 2.0
+- Snappy Java (https://github.com/xerial/snappy-java) - Apache 2.0
+- Jackson (https://github.com/FasterXML/jackson) - Apache 2.0
+- SnakeYAML (https://bitbucket.org/snakeyaml/snakeyaml) - Apache 2.0
+- HikariCP (https://github.com/brettwooldridge/HikariCP) - Apache 2.0
+- AspectJ (https://www.eclipse.org/aspects/) - Apache 2.0
+- Kotlin standard library (https://kotlinlang.org/) - Apache 2.0
+- Joda-Time (https://www.joda.org/joda-time/) - Apache 2.0
+- Eclipse Angus (Jakarta Mail / Activation) (https://github.com/eclipse-ee4j/angus-mail) - EPL 2.0 / GPL 2.0 with Classpath Exception
+- Jakarta EE APIs (https://jakarta.ee/) - EPL 2.0 / GPL 2.0 with Classpath Exception
+- SLF4J / Logback / Log4j API - MIT / Apache 2.0
+- Bouncy Castle (https://www.bouncycastle.org/) - Bouncy Castle License (MIT-style)
+
+--------------------------------------------------------------------------------
+Selected license branches
+--------------------------------------------------------------------------------
+
+Where a dependency is offered under multiple licenses, this distribution selects
+the Apache License, Version 2.0 branch:
+
+- JSQLParser: "LGPL 2.1 OR Apache 2.0" -> Apache 2.0
+- Jakarta EE APIs: "EPL 2.0 OR GPL 2.0 with Classpath Exception" -> EPL 2.0
+
+--------------------------------------------------------------------------------
+MySQL Connector/J
+--------------------------------------------------------------------------------
+
+The jffast distribution bundles MySQL Connector/J (com.mysql:mysql-connector-j),
+which is licensed under:
+
+  The GNU General Public License, v2 with Universal FOSS Exception, v1.0
+  (https://www.mysql.com/about/legal/connector-j/)
+
+The Universal FOSS Exception is what makes this combination distributable:
+it grants permission to use, link, and redistribute Connector/J as part of a
+work whose own license is not GPL, while the GPL text continues to govern
+Connector/J itself. Without the exception, redistributing a GPL component inside
+an Apache-2.0-licensed binary would not be permitted.
+
+The driver is included so that the released fat jar runs against MySQL out of
+the box. Applications targeting another database do not need it.
+
+The other JDBC drivers are declared "optional" in jffast-starter-mybatis, so
+they are never pulled in transitively and are explicitly excluded from the
+distribution artifact. They must be supplied by the deploying party, by
+adding the one matching the target database to the application's own build:
+
+  - PostgreSQL JDBC (org.postgresql:postgresql) - BSD 2-Clause
+  - Oracle JDBC (com.oracle.database.jdbc:ojdbc11) - Oracle Free Use Terms
+    and Conditions (FUTC) -- NOT an OSI-approved license
+  - DM (com.dameng:DmJdbcDriver18) and Kingbase (cn.com.kingbase:kingbase8) -
+    vendor-specific proprietary terms -- NOT OSI-approved licenses
+
+Only the non-MySQL drivers whose licenses are not OSI-approved are excluded
+for legal reasons; PostgreSQL's driver is excluded for consistency with the
+single-driver default, not because of its license.

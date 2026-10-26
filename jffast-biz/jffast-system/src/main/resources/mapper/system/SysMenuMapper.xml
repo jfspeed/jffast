@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="cn.jfspeed.system.mapper.SysMenuMapper">
+
+    <select id="selectPermsByRoleId" resultType="cn.jfspeed.system.entity.SysMenu">
+        select a.id,a.perms
+        from sys_menu a
+        left join sys_role_menu b on a.id = b.menu_id
+        where FIND_IN_SET(b.role_id,#{id})
+        GROUP BY a.id
+        order by parent_id,sort
+    </select>
+
+    <sql id="selectMenuList">
+        select a.id,a.name as title,parent_id,name,type,url,path,state,ifnull(perms,'') as perms,icon, sort,visible,active_menu
+        from sys_menu a
+        left join sys_role_menu b on a.id = b.menu_id
+    </sql>
+
+    <select id="selectMenuListByRoleId" resultType="cn.jfspeed.system.entity.SysMenu">
+        <include refid="selectMenuList"/>
+        where b.role_id = #{id}
+        <if test="name != null and name != ''">
+            AND name like concat('%', #{name}, '%')
+        </if>
+        <if test="state != null and state != ''">
+            AND state = #{state}
+        </if>
+        order by parent_id,sort
+    </select>
+    <select id="selectMenuListByRoleIds" resultType="cn.jfspeed.system.entity.SysMenu">
+        <include refid="selectMenuList"/>
+        where b.role_id in
+        <foreach collection="roleIds" item="roleId" open="(" separator="," close=")">
+            #{roleId}
+        </foreach>
+        <if test="name != null and name != ''">
+            AND name like concat('%', #{name}, '%')
+        </if>
+        <if test="state != null and state != ''">
+            AND state = #{state}
+        </if>
+        GROUP BY a.id
+        order by parent_id,sort
+    </select>
+    <select id="selectMenuListByPermList" resultType="cn.jfspeed.system.entity.SysMenu">
+        select a.id,parent_id,name,type,url,path,state,ifnull(perms,'') as perms,icon, sort,visible,active_menu
+        from sys_menu a
+        where perms in
+        <foreach collection="permList" item="itemValue" index="index" open="(" separator="," close=")">
+            #{itemValue}
+        </foreach>
+        order by parent_id,sort
+    </select>
+
+    <select id="selectMenuTreeByRoleId" resultType="cn.jfspeed.system.entity.SysMenu">
+        <include refid="selectMenuList"/>
+        where FIND_IN_SET( b.role_id,#{id}) and type in ('M', 'C') and a.state = 1
+        GROUP BY a.id
+        order by parent_id,sort
+    </select>
+    <select id="maxSort" resultType="java.lang.Integer">
+        select max(sort) m from sys_menu
+    </select>
+
+</mapper>

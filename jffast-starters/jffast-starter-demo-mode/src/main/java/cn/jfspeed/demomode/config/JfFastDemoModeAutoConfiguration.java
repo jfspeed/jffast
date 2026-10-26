@@ -1,0 +1,62 @@
+/*
+ * Copyright 2024-2026 jffast
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package cn.jfspeed.demomode.config;
+
+import org.aspectj.lang.annotation.Aspect;
+import org.quartz.Scheduler;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.boot.autoconfigure.AutoConfiguration;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.context.annotation.Bean;
+
+import cn.jfspeed.demomode.aspect.DemoModeSideEffectAspect;
+import cn.jfspeed.demomode.mybatis.DemoModeWriteBlockInterceptor;
+import cn.jfspeed.demomode.runner.DemoModeSchedulerPauser;
+
+/**
+ * 演示模式自动装配：仅 {@code jffast.demo-mode.enabled=true} 时生效，
+ * 默认关闭，对正常环境零开销（bean 都不建）。
+ *
+ * @author jffast
+ */
+@AutoConfiguration
+@ConditionalOnProperty(prefix = "jffast.demo-mode", name = "enabled", havingValue = "true")
+@EnableConfigurationProperties(DemoModeProperties.class)
+public class JfFastDemoModeAutoConfiguration {
+
+    @Bean
+    @ConditionalOnMissingBean
+    public DemoModeWriteBlockInterceptor demoModeWriteBlockInterceptor(DemoModeProperties properties) {
+        return new DemoModeWriteBlockInterceptor(properties);
+    }
+
+    @Bean
+    @ConditionalOnClass(Aspect.class)
+    @ConditionalOnMissingBean
+    public DemoModeSideEffectAspect demoModeSideEffectAspect() {
+        return new DemoModeSideEffectAspect();
+    }
+
+    @Bean
+    @ConditionalOnClass(Scheduler.class)
+    @ConditionalOnMissingBean
+    public DemoModeSchedulerPauser demoModeSchedulerPauser(ObjectProvider<Scheduler> schedulerProvider) {
+        return new DemoModeSchedulerPauser(schedulerProvider);
+    }
+}

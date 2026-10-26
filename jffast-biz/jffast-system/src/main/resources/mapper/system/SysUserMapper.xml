@@ -1,0 +1,119 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="cn.jfspeed.system.mapper.SysUserMapper">
+
+    <select id="getById" resultType="cn.jfspeed.system.entity.SysUser">
+        select
+        u.*,
+        GROUP_CONCAT(distinct r.role_name separator ',') as role_name,
+        GROUP_CONCAT(distinct d.dept_name separator ',') as dept_name
+        from sys_user u
+        left join sys_user_role sur on u.id = sur.user_id
+        <if test="roleId != null and roleId != '' ">
+            AND sur.role_id = #{roleId}
+        </if>
+        left join sys_role r on sur.role_id = r.id
+        left join sys_user_dept sud on u.id = sud.user_id
+        <if test="deptId != null and deptId != '' ">
+            AND sud.dept_id = #{deptId}
+        </if>
+        left join sys_dept d on sud.dept_id = d.id
+        <where>
+            <if test="id != null">
+                and u.id=#{id}
+            </if>
+            <if test="phone != null">
+                and u.phone=#{phone}
+            </if>
+            <if test="userName != null ">
+                AND u.user_name = #{userName}
+            </if>
+        </where>
+        group by u.id
+    </select>
+
+    <select id="page" resultType="cn.jfspeed.system.entity.SysUser">
+        select
+            u.*,
+            GROUP_CONCAT(distinct r.role_name separator ',') as role_name,
+            GROUP_CONCAT(distinct d.dept_name separator ',') as dept_name
+        from sys_user u
+            left join sys_user_role sur on u.id = sur.user_id
+            <if test="params.roleId != null and params.roleId != '' ">
+                AND sur.role_id = #{params.roleId}
+            </if>
+            left join sys_role r on sur.role_id = r.id
+            left join sys_user_dept sud on u.id = sud.user_id
+            <if test="params.deptId != null and params.deptId != '' ">
+                AND sud.dept_id = #{params.deptId}
+            </if>
+            left join sys_dept d on sud.dept_id = d.id
+        <where>
+            <if test="params.userName != null and params.userName != '' ">
+                AND u.user_name like concat('%', #{params.userName}, '%')
+            </if>
+            <if test="params.realName != null and params.realName != '' ">
+                AND u.real_name like concat('%', #{params.realName}, '%')
+            </if>
+            <if test="params.phone != null and params.phone != '' ">
+                AND u.phone like concat('%', #{params.phone}, '%')
+            </if>
+            <if test="params.state != null and params.state != '' ">
+                AND u.state = #{params.state}
+            </if>
+            <if test="params.beginTime != null and params.beginTime != '' ">
+                AND u.create_time &gt;= #{params.beginTime}
+            </if>
+            <if test="params.endTime != null and params.endTime != '' ">
+                AND u.create_time &lt;= #{params.endTime}
+            </if>
+            <if test="params.parentId != null and params.parentId != '' ">
+                AND u.id=#{params.parentId}
+            </if>
+        </where>
+        group by u.id
+        ORDER BY u.create_time desc
+    </select>
+
+    <!-- 不分页用户列表：与 page 相同的联表别名（u/d），使 @DataPermission(deptField="d.id", userField="u.id") 能注入生效 -->
+    <select id="list" resultType="cn.jfspeed.system.entity.SysUser">
+        select
+            u.*,
+            GROUP_CONCAT(distinct r.role_name separator ',') as role_name,
+            GROUP_CONCAT(distinct d.dept_name separator ',') as dept_name
+        from sys_user u
+            left join sys_user_role sur on u.id = sur.user_id
+            left join sys_role r on sur.role_id = r.id
+            left join sys_user_dept sud on u.id = sud.user_id
+            left join sys_dept d on sud.dept_id = d.id
+        <where>
+            <if test="params.id != null">
+                AND u.id = #{params.id}
+            </if>
+            <if test="params.userName != null and params.userName != '' ">
+                AND u.user_name like concat('%', #{params.userName}, '%')
+            </if>
+            <if test="params.realName != null and params.realName != '' ">
+                AND u.real_name like concat('%', #{params.realName}, '%')
+            </if>
+            <if test="params.phone != null and params.phone != '' ">
+                AND u.phone like concat('%', #{params.phone}, '%')
+            </if>
+            <if test="params.state != null and params.state != '' ">
+                AND u.state = #{params.state}
+            </if>
+            <if test="params.beginTime != null and params.beginTime != '' ">
+                AND u.create_time &gt;= #{params.beginTime}
+            </if>
+            <if test="params.endTime != null and params.endTime != '' ">
+                AND u.create_time &lt;= #{params.endTime}
+            </if>
+        </where>
+        group by u.id
+        ORDER BY u.create_time desc
+        <if test="params.maxRows != null">
+            limit #{params.maxRows}
+        </if>
+    </select>
+
+</mapper>

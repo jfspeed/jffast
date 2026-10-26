@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>cn.jfspeed</groupId>
+        <artifactId>jffast</artifactId>
+        <version>1.0.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>jffast-biz</artifactId>
+    <packaging>pom</packaging>
+    <name>jffast-biz</name>
+    <description>jffast Modules - Aggregator for all business modules</description>
+
+    <modules>
+        <module>jffast-system</module>
+        <module>jffast-demo</module>
+        <module>jffast-flow</module>
+        <module>jffast-ai</module>
+    </modules>
+
+</project>

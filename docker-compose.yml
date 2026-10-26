@@ -1,0 +1,71 @@
+version: '3.8'
+
+# jffast 快速体验环境（只起依赖）
+# 仅启动 MySQL + Redis，后端/前端在本机用 mvn / npm 直接跑 —— 适合二次开发时改代码热重载。
+#
+# 要「全套容器化」请用 deploy/docker-compose.yml（含后端镜像），
+# 前端镜像在 jffast-ui/deploy/docker-compose.yml（两者通过外部网络 jffast-net 互通）。
+# 完整部署方式见 deploy/README.md。
+# 使用方式：
+#   1. docker compose up -d
+#   2. 等待 MySQL 启动（约 10 秒）
+#   3. 导入 SQL（口令为统一测试填充值 test1234）：
+#        ⚠️ 导入顺序与清单以 README.md「初始化数据库」一节为**唯一权威**，此处不复制清单
+#           （复制即产生第二事实源，此前就漏过 sys_post / sys_task / sys_file 三份）。
+#           其中 flowable_schema/flowable_mysql_all.sql **必须导入**（工作流引擎启动需要
+#           act_ge_property 等表，缺失会直接启动失败），不是「用到工作流才导入」。
+#           示例：
+#           mysql -h 127.0.0.1 -uroot -ptest1234 jffast < sql/system_sql.sql
+#           mysql -h 127.0.0.1 -uroot -ptest1234 jffast < sql/flowable_schema/flowable_mysql_all.sql
+#           mysql -h 127.0.0.1 -uroot -ptest1234 jffast < sql/system_init_data.sql
+#   4. 启动后端：cd jffast-boot && mvn spring-boot:run
+#   5. 启动前端（另 clone jffast-ui 到同级目录）：cd ../jffast-ui && npm run dev
+
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: jffast-mysql
+    restart: unless-stopped
+    environment:
+      # ⚠️ 仅用于本地体验：口令弱且固定。对外可访问的部署请改用
+      #   MYSQL_ROOT_PASSWORD=<强口令> docker compose up -d
+      # 或直接参考 deploy/docker-compose.yml（那里对口令与端口有更严格的要求）。
+      # test1234 为统一测试填充值：与 application-dev/test.yml、README 命令保持一致，
+      # 也是仓库凭据扫描的唯一白名单口令。
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-test1234}
+      MYSQL_DATABASE: jffast
+      TZ: Asia/Shanghai
+    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_general_ci
+    ports:
+      # 只绑定回环地址：避免把 MySQL 暴露到局域网 / 公网。
+      # 顺带避开与开发者本机已装的 MySQL 抢 3306。
+      - "127.0.0.1:3306:3306"
+    volumes:
+      - jffast-mysql-data:/var/lib/mysql
+    healthcheck:
+      # 不用 mysqladmin ping：它认证失败也返回 0；用真认证查询
+      test: ["CMD-SHELL", "mysql -h localhost -uroot -p\"$$MYSQL_ROOT_PASSWORD\" -e 'SELECT 1'"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: jffast-redis
+    restart: unless-stopped
+    ports:
+      # 同上：只绑定回环地址，Redis 默认无鉴权，暴露到局域网风险更高
+      - "127.0.0.1:6379:6379"
+    volumes:
+      - jffast-redis-data:/data
+    # Redis 同样使用统一测试填充值，与 application-dev/test.yml 的 REDIS_PASSWORD 默认值一致
+    command: redis-server --appendonly yes --requirepass test1234
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a test1234 ping | grep PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  jffast-mysql-data:
+  jffast-redis-data:

@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    jffast 日志增强配置。
+
+    在项目的 logback-spring.xml 中通过 <include resource="logback-jffast.xml"/> 引入，
+    即可启用日志消息层面的敏感字段脱敏（手机号、身份证号、邮箱、密码/token/密钥等）。
+-->
+<configuration>
+    <conversionRule conversionWord="msg"
+                    converterClass="cn.jfspeed.common.core.log.SensitiveMaskMessageConverter"/>
+</configuration>

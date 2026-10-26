@@ -1,0 +1,60 @@
+name: CI
+
+on:
+  push:
+    branches: [ master, main ]
+  pull_request:
+    branches: [ master, main ]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Base Backend Build & Test
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        java-version: [ '21' ]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK ${{ matrix.java-version }}
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ matrix.java-version }}
+          distribution: 'temurin'
+          cache: 'maven'
+
+      - name: Build with Maven
+        run: mvn clean compile -B
+
+      # 测试 + 覆盖率门禁一起走 verify：jacoco 的 report/check 分别绑在 test / verify 阶段，
+      # 且 check 的 rules 配置挂在 execution id=check 上。命令行直接调 `mvn jacoco:check`
+      # 用的是 default-cli 执行，读不到那段配置，会以
+      # "The parameters 'rules' for this goal are missing or invalid" 失败——门禁形同虚设且必红。
+      - name: Run tests and coverage gate
+        run: mvn verify -B
+
+      - name: Dependency review (PR)
+        uses: actions/dependency-review-action@v4
+        if: github.event_name == 'pull_request'
+        continue-on-error: true
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        if: success()
+        continue-on-error: true
+        with:
+          files: '**/target/site/jacoco/jacoco.xml'
+          fail_ci_if_error: false
+
+      - name: Upload test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: backend-test-results
+          path: '**/target/surefire-reports/'
+          retention-days: 7

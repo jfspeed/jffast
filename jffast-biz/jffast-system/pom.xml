@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>cn.jfspeed</groupId>
+        <artifactId>jffast-biz</artifactId>
+        <version>1.0.0-SNAPSHOT</version>
+        <relativePath>../pom.xml</relativePath>
+    </parent>
+
+    <artifactId>jffast-system</artifactId>
+    <name>jffast-system</name>
+    <description>jffast System - Built-in system management (user, role, menu, dict, etc.)</description>
+
+    <dependencies>
+        <dependency>
+            <groupId>cn.jfspeed</groupId>
+            <artifactId>jffast-starter-mybatis</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>cn.jfspeed</groupId>
+            <artifactId>jffast-starter-web</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>cn.jfspeed</groupId>
+            <artifactId>jffast-starter-security</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>cn.jfspeed</groupId>
+            <artifactId>jffast-starter-redis</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>cn.jfspeed</groupId>
+            <artifactId>jffast-starter-log</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>cn.jfspeed</groupId>
+            <artifactId>jffast-starter-file</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>cn.jfspeed</groupId>
+            <artifactId>jffast-starter-excel</artifactId>
+        </dependency>
+        <!-- 通知邮件通道（SMTP）；不配置 spring.mail.* 时自动无 Bean，通道保持关闭 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-mail</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>cn.jfspeed</groupId>
+            <artifactId>jffast-starter-job</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>cn.jfspeed</groupId>
+            <artifactId>jffast-starter-oauth2-client</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-websocket</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.bouncycastle</groupId>
+            <artifactId>bcprov-jdk18on</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+</project>

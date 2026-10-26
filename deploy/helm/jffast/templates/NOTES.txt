@@ -1,0 +1,46 @@
+===================================================================
+ 🌪️ 疾风 (jffast) 已部署到 Kubernetes！
+===================================================================
+
+Release:       {{ .Release.Name }}
+Namespace:     {{ .Release.Namespace }}
+App version:   {{ .Chart.AppVersion }}
+Image:         {{ include "jffast.image" . }}
+
+1. 等待 Pod 就绪：
+
+   kubectl -n {{ .Release.Namespace }} rollout status deployment/{{ include "jffast.fullname" . }}
+
+2. 获取 Service 信息：
+
+   kubectl -n {{ .Release.Namespace }} get svc {{ include "jffast.fullname" . }}
+
+{{- if .Values.ingress.enabled }}
+
+3. 通过 Ingress 访问（需先配置 DNS 解析到 Ingress Controller 外网 IP）：
+
+   {{- range .Values.ingress.hosts }}
+   http{{ if $.Values.ingress.tls }}s{{ end }}://{{ .host }}{{ (index .paths 0).path }}
+   {{- end }}
+{{- else }}
+
+3. 端口转发本地访问：
+
+   kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "jffast.fullname" . }} {{ .Values.service.port }}:{{ .Values.service.port }}
+
+   然后浏览器打开：http://localhost:{{ .Values.service.port }}/jffast-api/swagger-ui.html
+{{- end }}
+
+4. 默认账号：admin / A@123456（首次登录请立即修改密码）
+
+5. 查看日志：
+
+   kubectl -n {{ .Release.Namespace }} logs -f deployment/{{ include "jffast.fullname" . }}
+
+===================================================================
+⚠️  安全提示：
+- 生产环境务必修改 secrets.MYSQL_PASSWORD / REDIS_PASSWORD
+- 务必配置 secrets.RSA_PRIVATE_KEY / RSA_PUBLIC_KEY（否则登录密码加密失效）
+- 务必关闭 JFFAST_SWAGGER_ENABLED（默认已关闭）
+- 建议启用 Ingress TLS
+===================================================================

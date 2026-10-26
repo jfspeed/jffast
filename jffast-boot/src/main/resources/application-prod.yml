@@ -1,0 +1,44 @@
+spring:
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    # 生产默认强制 TLS（sslMode=REQUIRED）；如内部环境未启用 MySQL TLS，可用 MYSQL_SSL_MODE 显式放宽
+    # 不再使用 useSSL=false + allowPublicKeyRetrieval=true（明文连接 + 允许明文取公钥，易被中间人窃取凭据）
+    url: jdbc:mysql://${MYSQL_HOST}:${MYSQL_PORT:3306}/${MYSQL_DB:jffast}?useUnicode=true&characterEncoding=utf-8&sslMode=${MYSQL_SSL_MODE:REQUIRED}&serverTimezone=Asia/Shanghai
+    username: ${MYSQL_USER}
+    password: ${MYSQL_PASSWORD}
+  data:
+    redis:
+      host: ${REDIS_HOST}
+      port: ${REDIS_PORT:6379}
+      # 各应用独立 database，避免多应用共用同一 Sa-Token 会话键空间
+      database: ${REDIS_DATABASE:0}
+      password: ${REDIS_PASSWORD:}
+
+logging:
+  level:
+    cn.jfspeed: warn
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: never
+
+jffast:
+  swagger:
+    enabled: false
+  system:
+    # prod 必填：覆盖 application.yml 里 test1234 的公开测试默认值，
+    # 缺 JFFAST_INIT_PASSWORD 时占位符无默认 → 启动即失败（fail-fast）。
+    init-password: ${JFFAST_INIT_PASSWORD}
+  web:
+    trace-id:
+      enabled: true
+    xss:
+      enabled: true
+
+sa-token:
+  is-log: false

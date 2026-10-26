@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>cn.jfspeed</groupId>
+        <artifactId>jffast-starters</artifactId>
+        <version>1.0.0-SNAPSHOT</version>
+        <relativePath>../pom.xml</relativePath>
+    </parent>
+
+    <artifactId>jffast-starter-job</artifactId>
+    <name>jffast-starter-job</name>
+    <description>jffast Starter Job - Quartz scheduled task auto-configuration and management</description>
+
+    <dependencies>
+        <dependency>
+            <groupId>cn.jfspeed</groupId>
+            <artifactId>jffast-common</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-quartz</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-autoconfigure</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-configuration-processor</artifactId>
+            <optional>true</optional>
+        </dependency>
+        <!-- 任务登记/调度要读写 sys_job、sys_job_log（JdbcTemplate 直连，避免把 jffast-system 编进 classpath）。
+             声明为 optional：没有数据库的服务（如纯网关）也能安全引入本 Starter，
+             此时自动配置里的 JobStore 退化为 NoopJobStore。 -->
+        <dependency>
+            <groupId>org.springframework</groupId>
+            <artifactId>spring-jdbc</artifactId>
+            <optional>true</optional>
+        </dependency>
+        <!-- 多副本防重复执行用的 Redis 锁；同样 optional，
+             没有 Redis 时退化（不装配 JobLock，执行时不加锁，与本 Starter 改造前行为一致）。 -->
+        <dependency>
+            <groupId>org.springframework.data</groupId>
+            <artifactId>spring-data-redis</artifactId>
+            <optional>true</optional>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+</project>

@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="cn.jfspeed.system.mapper.SysRoleMenuMapper">
+
+    <insert id="insertBatch">
+        INSERT INTO sys_role_menu (role_id,menu_id)
+        VALUES
+        <foreach collection ="list" item="item" separator =",">
+            (#{item.roleId},#{item.menuId})
+        </foreach>
+    </insert>
+
+    <select id="listAll" resultType="cn.jfspeed.system.entity.SysRoleMenu">
+        SELECT role_id,perms menu_id
+        FROM sys_role_menu a
+        LEFT JOIN sys_menu b on a.menu_id=b.id
+    </select>
+    <select id="listAllBtnPerm" resultType="cn.jfspeed.system.domain.dto.SysRoleMenuResponse">
+        SELECT role_id,perms
+        FROM sys_role_menu a
+        inner JOIN sys_menu b on a.menu_id=b.id
+        where role_id =#{roleId} and perms is not null
+        union
+        SELECT role_id,menu_id perms
+        FROM sys_role_menu a
+        left JOIN sys_menu b on a.menu_id=b.id
+        where role_id =#{roleId} and perms is  null
+    </select>
+
+</mapper>

@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>cn.jfspeed</groupId>
+        <artifactId>jffast-biz</artifactId>
+        <version>1.0.0-SNAPSHOT</version>
+        <relativePath>../pom.xml</relativePath>
+    </parent>
+
+    <artifactId>jffast-flow</artifactId>
+    <name>jffast-flow</name>
+    <description>jffast Flow - Workflow business module (category/deploy/instance/task/history) based on jffast-starter-flowable</description>
+
+    <dependencies>
+        <dependency>
+            <groupId>cn.jfspeed</groupId>
+            <artifactId>jffast-common</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>cn.jfspeed</groupId>
+            <artifactId>jffast-starter-flowable</artifactId>
+        </dependency>
+        <!-- 引入 jffast-system 用于审批人解析（SysUser/SysRole/SysDept 查询） -->
+        <dependency>
+            <groupId>cn.jfspeed</groupId>
+            <artifactId>jffast-system</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>cn.jfspeed</groupId>
+            <artifactId>jffast-starter-security</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>cn.jfspeed</groupId>
+            <artifactId>jffast-starter-log</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+</project>

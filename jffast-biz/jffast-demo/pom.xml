@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>cn.jfspeed</groupId>
+        <artifactId>jffast-biz</artifactId>
+        <version>1.0.0-SNAPSHOT</version>
+        <relativePath>../pom.xml</relativePath>
+    </parent>
+
+    <artifactId>jffast-demo</artifactId>
+    <name>jffast-demo</name>
+    <description>jffast Demo - Example business module for reference</description>
+
+    <dependencies>
+        <dependency>
+            <groupId>cn.jfspeed</groupId>
+            <artifactId>jffast-starter-mybatis</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>cn.jfspeed</groupId>
+            <artifactId>jffast-starter-web</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>cn.jfspeed</groupId>
+            <artifactId>jffast-starter-security</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>cn.jfspeed</groupId>
+            <artifactId>jffast-starter-log</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>cn.jfspeed</groupId>
+            <artifactId>jffast-starter-job</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>cn.jfspeed</groupId>
+            <artifactId>jffast-starter-excel</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>cn.jfspeed</groupId>
+            <artifactId>jffast-starter-file</artifactId>
+        </dependency>
+        <!-- Service 测试模板依赖；jffast-demo 是新模块的参考样板，测试套路也随模块走 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+</project>

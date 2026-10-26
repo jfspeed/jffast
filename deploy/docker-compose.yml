@@ -1,0 +1,159 @@
+# jffast 后端栈：MySQL + Redis + 后端
+#
+# 与前端的关系：**两个仓各自独立编排，不互相引用**。
+#   - 本文件只管后端（jffast 仓库内自足）
+#   - 前端见 jffast-ui/deploy/docker-compose.yml
+#   - 两者通过外部网络 jffast-net 互通，前端 nginx 用服务名 backend 反代
+# 因此首次启动前先建一次网络（只需一次）：
+#   docker network create jffast-net
+#
+# 用法：
+#   cp .env.example .env   # 填 RSA_PRIVATE_KEY / RSA_PUBLIC_KEY / JFFAST_INIT_PASSWORD
+#   docker compose -f deploy/docker-compose.yml up -d --build      # 本地编译镜像
+#   docker compose -f deploy/docker-compose.yml up -d              # 已有镜像时直接起
+#
+# image + build 同时存在是有意的：
+#   - 有 build 段 → `up --build` 本地编译（无 CI 时一条命令起全套）
+#   - 只改 BACKEND_IMAGE → 走预构建镜像，部署机不装 JDK/Maven
+# 两种用法共用同一份文件，不需要维护两套编排。
+#
+# ⚠ name 必须显式设置：compose 的默认项目名 = **编排文件所在目录名**，本文件与
+#   jffast-ui/deploy/docker-compose.yml 都在 `deploy/` ⇒ 两者项目名同为 `deploy`，
+#   于是前端栈的 `down --remove-orphans` 会把后端栈（同项目、但不在前端文件里）的容器
+#   当孤儿一起删掉；把本编排放到别的项目目录下时也会撞上同一个名字 —— 卷名、
+#   网络名全部互相命中。各项目请各取唯一名字。
+#   ⚠ 项目名一改，卷的物理名随之改变（deploy_mysql-data → jffast-backend_mysql-data）：
+#   旧卷不会被自动接管，看起来像"数据丢了"。要么迁移一次：
+#     docker run --rm -v deploy_mysql-data:/from -v jffast-backend_mysql-data:/to alpine cp -a /from/. /to/
+#   要么确认旧库无需保留后 `docker volume rm deploy_mysql-data`，下次 up 自动重新播种。
+name: jffast-backend
+
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: jffast-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_PASSWORD:-test1234}
+      MYSQL_DATABASE: ${MYSQL_DB:-jffast}
+      MYSQL_CHARACTER_SET_SERVER: utf8mb4
+      MYSQL_COLLATION_SERVER: utf8mb4_unicode_ci
+      TZ: Asia/Shanghai
+    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_general_ci
+    ports:
+      # 只绑回环：MySQL 不该暴露到局域网/公网，顺带避开与本机已装的 MySQL 抢 3306。
+      # 容器间的访问走 compose 内部网络，不受这条映射影响。
+      - "127.0.0.1:${MYSQL_HOST_PORT:-3306}:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+      # 只播种系统表，不挂整个 sql/ 目录：
+      #   sql/ 下还有 flowable_schema/、quartz.sql、demo_*.sql 等，整目录挂进去会被
+      #   initdb 全量执行（且按文件名排序，不等于依赖顺序）。这里用文件级挂载 +
+      #   01/02 前缀显式定序。需要工作流/定时任务时，按需再加一行：
+      #     - ../sql/flowable_schema/flowable_mysql_all.sql:/docker-entrypoint-initdb.d/03-flowable.sql:ro
+      #     - ../sql/flow_sql.sql:/docker-entrypoint-initdb.d/04-flow.sql:ro
+      #   ⚠ flowable 那行并非总是可以不挂：本容器卷为空时引擎会自建 ACT_*，确实可以不挂；
+      #     但若该 MySQL **实例上已有别的库带 ACT_***（引擎判断「schema 已存在」时忽略当前库），
+      #     它会走 upgrade 分支而本库没表 → 启动报 Table 'act_ge_property' doesn't exist，
+      #     此时必须显式挂上 flowable 行。
+      # 注意：initdb 只在数据卷为空时执行，改 SQL 后需 `docker compose down -v` 才会重跑。
+      - ../sql/system_sql.sql:/docker-entrypoint-initdb.d/01-system_sql.sql:ro
+      - ../sql/system_init_data.sql:/docker-entrypoint-initdb.d/02-system_init_data.sql:ro
+    healthcheck:
+      # 不用 mysqladmin ping：它认证失败（口令错）也返回 0，形同虚设；
+      # 用真认证查询，口令错即 unhealthy
+      test: ["CMD-SHELL", "mysql -h localhost -uroot -p\"$$MYSQL_ROOT_PASSWORD\" -e 'SELECT 1'"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    networks:
+      - internal
+
+  redis:
+    image: redis:7-alpine
+    container_name: jffast-redis
+    restart: unless-stopped
+    # 与 MySQL 同口径：口令以**容器内变量**的形式再给一份，健康检查里用 `$$` 引用它，
+    # 避免口令被 compose 插值进健康检查命令行（进程列表 / 容器配置里明文可见）
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-test1234}
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-test1234}
+    ports:
+      - "127.0.0.1:${REDIS_HOST_PORT:-6379}:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli --no-auth-warning -a \"$$REDIS_PASSWORD\" ping | grep PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    networks:
+      - internal
+
+  backend:
+    image: ${BACKEND_IMAGE:-jffast-boot:latest}
+    build:
+      context: ..
+      dockerfile: jffast-boot/Dockerfile
+    container_name: jffast-backend
+    restart: unless-stopped
+    environment:
+      # 必填（fail-fast）：容器启动即校验数据源，缺失直接退出 —— 数据源只存在于
+      # application-{dev,test,prod}.yml，没有「默认 profile」可用
+      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-prod}
+      MYSQL_HOST: mysql
+      MYSQL_PORT: 3306
+      MYSQL_DB: ${MYSQL_DB:-jffast}
+      MYSQL_USER: root
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-test1234}
+      # application-prod.yml 的 JDBC url 默认 sslMode=REQUIRED；容器间通常没有 TLS，
+      # 用 PREFERRED 兜底（有 TLS 就加密，没有就连明文），避免首次启动卡在握手
+      MYSQL_SSL_MODE: ${MYSQL_SSL_MODE:-PREFERRED}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-test1234}
+      # 登录密码解密用。多副本必须各实例一致，否则请求打到不同实例会解密失败
+      RSA_PRIVATE_KEY: ${RSA_PRIVATE_KEY:?RSA_PRIVATE_KEY is required, generate with deploy/gen-rsa.sh}
+      RSA_PUBLIC_KEY: ${RSA_PUBLIC_KEY:?RSA_PUBLIC_KEY is required, generate with deploy/gen-rsa.sh}
+      # admin 初始密码：prod profile 下无默认值，缺失即启动失败（application-prod.yml）
+      JFFAST_INIT_PASSWORD: ${JFFAST_INIT_PASSWORD:?JFFAST_INIT_PASSWORD is required}
+      # 可信反向代理网段：容器内后端看到的是「前端 nginx 容器」地址，不配本项 ⇒ 所有用户
+      # 被判成同一个 IP，per-IP 限流（登录 30/分、验证码 10/分）退化成全站一个桶。
+      # 默认给 Docker 默认 bridge 段；自定义网络若不在 172.16.0.0/12 内，需在 .env 覆盖。
+      JFFAST_SECURITY_TRUSTED_PROXIES: ${JFFAST_SECURITY_TRUSTED_PROXIES:-172.16.0.0/12}
+    ports:
+      # 只在 jffast-net 上给前端访问；这里映射方便本机直接联调/排障
+      - "127.0.0.1:${BACKEND_HOST_PORT:-7200}:7200"
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      # context-path 来自 server.servlet.context-path=/${app.name}-api，即 /jffast-api
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:7200/jffast-api/actuator/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 90s
+    networks:
+      - internal
+      - jffast-net
+    volumes:
+      # 本地文件存储（jffast.file.storage.type=local 默认写 /app/upload）
+      - jffast-upload:/app/upload
+
+volumes:
+  mysql-data:
+  redis-data:
+  jffast-upload:
+
+networks:
+  # 后端与数据库的私有网络：MySQL / Redis 不对外暴露名称
+  internal:
+  # 与前端共享的外部网络（需 docker network create jffast-net 建一次）
+  jffast-net:
+    external: true
+    name: ${JFFAST_NETWORK:-jffast-net}

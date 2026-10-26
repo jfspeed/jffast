@@ -1,0 +1,146 @@
+# jffast Helm Chart 默认配置
+# 用 `helm install jffast ./deploy/helm/jffast -f my-values.yaml` 覆盖
+
+# ─── jffast-boot 应用 ───
+image:
+  registry: ""            # 留空用 Docker Hub；私有仓库填 ghcr.io / registry.cn-hangzhou.aliyuncs.com 等
+  repository: jffast/jffast-boot
+  tag: "1.0.0-SNAPSHOT"
+  # 预发布对齐后端 pom 的 1.0.0-SNAPSHOT；正式发布 v1.0.0 时随 pom 一起定版
+  pullPolicy: IfNotPresent
+  pullSecrets: []         # 私有仓库鉴权：[{ name: my-registry-secret }]
+
+replicaCount: 1
+# ⚠️ 扩容前先看文件存储：`jffast.file.storage.type` 默认 `local`，上传落在容器内的 /app/upload。
+#    多副本时文件只落在某一个 Pod 本地，其它副本读不到就是 404，Pod 重建文件也会丢。
+#      - 保持单副本：给 /app/upload 挂 PVC 即可持久化（本 Chart 未内置，按需加 volume）
+#      - 要扩容：改用 minio / aliyun-oss / tencent-cos（starter 已内置四种实现），
+#        通过下面 env/secrets 注入 JFFAST_FILE_STORAGE_TYPE 等配置项
+#    另：定时任务靠 Redis 分布式执行锁防重复，所以 Redis 必须配置，不能省。
+
+# Spring Boot 应用端口（容器内）
+containerPort: 7200
+# Service 暴露端口
+service:
+  type: ClusterIP         # ClusterIP | NodePort | LoadBalancer
+  port: 7200
+  nodePort: ""            # type=NodePort 时指定，留空自动分配
+
+# JVM 参数
+javaOpts: "-Xms256m -Xmx768m -XX:+UseG1GC -XX:MaxGCPauseMillis=200"
+
+# 应用级环境变量（非敏感），与 application-dev.yml 中 ${VAR} 占位符对应
+env:
+  # 必须显式指定：容器启动即校验，缺失直接退出（数据源只存在于 application-{dev,test,prod}.yml）
+  SPRING_PROFILES_ACTIVE: "prod"
+  SERVER_PORT: "7200"
+  MYSQL_DB: "jffast"
+  TZ: "Asia/Shanghai"
+  JFFAST_SWAGGER_ENABLED: "false"   # 生产环境关闭接口文档
+
+# 敏感配置，通过 Secret 注入
+secrets:
+  # 数据库连接（默认指向 Chart 内 MySQL 子 chart；用外部 DB 时改这里）
+  MYSQL_HOST: "jffast-mysql"
+  MYSQL_PORT: "3306"
+  MYSQL_USER: "root"
+  MYSQL_PASSWORD: "test1234"       # 统一测试填充值，部署前改成强密码！建议 `helm install --set secrets.MYSQL_PASSWORD=$(openssl rand -base64 24)`
+  # Redis 连接
+  REDIS_HOST: "jffast-redis-master"
+  REDIS_PORT: "6379"
+  REDIS_PASSWORD: ""
+  # RSA 密钥对（密码加密用，前后端必须同一对；生成方式见 deploy/gen-rsa.sh 或 deploy/README.md）
+  # 多副本时各实例必须一致，否则登录请求打到不同实例会解密失败
+  RSA_PRIVATE_KEY: ""
+  RSA_PUBLIC_KEY: ""
+  # admin 初始密码：prod profile 下无默认值（覆盖 application.yml 里公开的测试填充值），
+  # 缺失即启动失败
+  JFFAST_INIT_PASSWORD: ""
+
+# 资源限制（按需调整）
+resources:
+  requests:
+    cpu: "200m"
+    memory: "512Mi"
+  limits:
+    cpu: "1000m"
+    memory: "1Gi"
+
+# 滚动更新策略
+strategy:
+  type: RollingUpdate
+  rollingUpdate:
+    maxSurge: 1
+    maxUnavailable: 0
+
+# 就绪/存活探针
+probes:
+  readiness:
+    enabled: true
+    path: /jffast-api/actuator/health
+    initialDelaySeconds: 30
+    periodSeconds: 10
+    timeoutSeconds: 5
+  liveness:
+    enabled: true
+    path: /jffast-api/actuator/health
+    initialDelaySeconds: 90
+    periodSeconds: 30
+    timeoutSeconds: 5
+
+# Pod 调度
+nodeSelector: {}
+affinity: {}
+tolerations: []
+
+# ─── Ingress ───
+ingress:
+  enabled: false
+  className: "nginx"                # nginx / traefik / alb 等
+  annotations: {}
+  hosts:
+    - host: jffast.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+  # - secretName: jffast-tls
+  #   hosts:
+  #     - jffast.example.com
+
+# ─── 水平自动伸缩（可选） ───
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 5
+  targetCPUUtilizationPercentage: 80
+  # targetMemoryUtilizationPercentage: 80
+
+# ─── MySQL 子 chart（Bitnami） ───
+# 启用后会部署一个 MySQL 实例，jffast-boot 通过 secrets.MYSQL_HOST=jffast-mysql 连接
+# 生产环境建议用外部托管 MySQL，将 mysql.enabled 设为 false
+mysql:
+  enabled: true
+  auth:
+    rootPassword: "test1234"        # 与 secrets.MYSQL_PASSWORD 保持一致
+    database: "jffast"
+  primary:
+    persistence:
+      enabled: true
+      size: 10Gi
+      storageClass: ""              # 留空用集群默认 StorageClass
+  image:
+    tag: "8.0"
+
+# ─── Redis 子 chart（Bitnami） ───
+# 启用后会部署一个 Redis 实例，jffast-boot 通过 secrets.REDIS_HOST=jffast-redis-master 连接
+redis:
+  enabled: true
+  auth:
+    enabled: false                  # 与 secrets.REDIS_PASSWORD 保持一致（空表示无密码）
+  master:
+    persistence:
+      enabled: true
+      size: 5Gi
+      storageClass: ""
+  architecture: standalone

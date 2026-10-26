@@ -1,0 +1,77 @@
+HELP.md
+target/
+!.mvn/wrapper/maven-wrapper.jar
+!**/src/main/**/target/
+!**/src/test/**/target/
+
+### STS ###
+.apt_generated
+.classpath
+.factorypath
+.project
+.settings
+.springBeans
+.sts4-cache
+
+### IntelliJ IDEA ###
+.idea
+*.iws
+*.iml
+*.ipr
+
+### NetBeans ###
+/nbproject/private/
+/nbbuild/
+/dist/
+/nbdist/
+/.nb-gradle/
+build/
+!**/src/main/**/build/
+!**/src/test/**/build/
+
+### VS Code ###
+.vscode/
+
+### OS ###
+.DS_Store
+Thumbs.db
+
+### Logs ###
+*.log
+logs/
+
+### Temp ###
+*.tmp
+*.bak
+*.swp
+*~
+
+### Upload ###
+upload/
+
+### IDE ###
+*.factorypath
+
+### Trae ###
+.trae/
+
+### Local scripts ###
+bin/
+
+### 部署环境变量（含 RSA 私钥等敏感值，勿提交；示例见 deploy/.env.example）
+.env
+.env.local
+
+# Local private values (AGENTS.md companion)
+LOCAL.md
+
+### E2E / 冒烟脚本的 dev server 运行日志目录（含本机路径与临时端口，勿提交）
+_e2e-logs/
+
+### 密钥 / 证书文件（RSA 私钥、证书、密钥库一律不入库；示例见 deploy/.env.example）
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+*.keystore

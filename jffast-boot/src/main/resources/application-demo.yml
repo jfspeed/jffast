@@ -1,0 +1,17 @@
+# 上线演示站 profile：`mvn spring-boot:run -Dspring-boot.run.profiles=demo`
+# 或 `java -jar jffast-boot.jar --spring.profiles.active=demo`。
+# 效果：增删改页面照常操作、返回成功，但不入库（DB 写短路）；
+# 文件上传/删除、定时任务触发被拒绝并明示；短信保持 log 提供方（默认即 log）；
+# 代码生成器落盘在 JAR 运行时本就拒绝。操作/任务日志照写（审计不断）。
+jffast:
+  demo-mode:
+    enabled: true
+    # 豁免语句前缀：以下 Mapper 的写操作正常入库
+    exempt-statement-prefixes:
+      - SysLogMapper
+      - SysJobLogMapper
+
+# 演示站 profile 只描述「演示模式」这一层；数据源 / Redis 等基础配置来自 dev。
+# 组内展开由 `application.yml` 的 `spring.profiles.group.demo: [dev]` 负责 ——
+# 这里**不能**写 `spring.profiles.include`：profile 专属文档里带该属性会被
+# Spring Boot 2.4+ 判为非法（InvalidConfigDataPropertyException），demo 档直接起不来。

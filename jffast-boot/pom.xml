@@ -1,0 +1,155 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>cn.jfspeed</groupId>
+        <artifactId>jffast</artifactId>
+        <version>1.0.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>jffast-boot</artifactId>
+    <name>jffast-boot</name>
+    <description>jffast Boot - Base version runnable application</description>
+
+    <dependencies>
+        <dependency>
+            <groupId>cn.jfspeed</groupId>
+            <artifactId>jffast-system</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>cn.jfspeed</groupId>
+            <artifactId>jffast-demo</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>cn.jfspeed</groupId>
+            <artifactId>jffast-flow</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>cn.jfspeed</groupId>
+            <artifactId>jffast-ai</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>cn.jfspeed</groupId>
+            <artifactId>jffast-starter-file</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>cn.jfspeed</groupId>
+            <artifactId>jffast-starter-excel</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>cn.jfspeed</groupId>
+            <artifactId>jffast-starter-social</artifactId>
+        </dependency>
+        <!-- 演示模式：默认关闭（jffast.demo-mode.enabled=false），仅演示 profile 打开 -->
+        <dependency>
+            <groupId>cn.jfspeed</groupId>
+            <artifactId>jffast-starter-demo-mode</artifactId>
+        </dependency>
+        <!-- 数据库驱动：jffast-starter-mybatis 的驱动依赖为 optional，由应用层显式声明 -->
+        <!-- 切换数据库时改这里：MySQL → PostgreSQL / Oracle / DM / Kingbase -->
+        <!-- 各方言的驱动坐标与连接 URL 见根 README「多数据库支持」；建表脚本目前只有 MySQL 版本 -->
+        <!-- MySQL 驱动必须留在 fat jar 里（去掉它 = 产出的包连不上库，开箱即用就没了）。
+             它的许可是 GPLv2 + Universal FOSS Exception：UFO 的用途正是允许 GPL 代码进入
+             非 GPL 作品的分发，Apache-2.0 + UFO 属兼容组合。NOTICE 已按 §4(d) 标注该依赖。 -->
+        <dependency>
+            <groupId>com.mysql</groupId>
+            <artifactId>mysql-connector-j</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <!-- 架构规范门禁：把「开发规范.md」里 AI / 新人最容易违反的约束固化成会 FAIL 的测试 -->
+        <dependency>
+            <groupId>com.tngtech.archunit</groupId>
+            <artifactId>archunit-junit5</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <finalName>jffast-boot</finalName>
+        <plugins>
+            <!-- Apache-2.0 §4(a)(d)：许可证副本与 NOTICE 必须随二进制一起分发，
+                 源码分发合规不代表 fat jar 合规。构建期从仓库根复制（不维护第二份副本），
+                 否则两份文件会各自漂移。产物落在 BOOT-INF/classes/META-INF/。 -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-resources-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>copy-license-notice</id>
+                        <!-- process-resources：resources 插件的天然阶段，保证在 repackage 之前跑完 -->
+                        <phase>process-resources</phase>
+                        <goals>
+                            <goal>copy-resources</goal>
+                        </goals>
+                        <configuration>
+                            <outputDirectory>${project.build.outputDirectory}/META-INF</outputDirectory>
+                            <overwrite>true</overwrite>
+                            <resources>
+                                <resource>
+                                    <!-- 仓库根（jffast/）：LICENSE 与 NOTICE 的唯一事实源 -->
+                                    <directory>${project.basedir}/..</directory>
+                                    <includes>
+                                        <include>LICENSE</include>
+                                        <include>NOTICE</include>
+                                    </includes>
+                                    <filtering>false</filtering>
+                                </resource>
+                            </resources>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+                <version>${spring-boot.version}</version>
+                <configuration>
+                    <mainClass>cn.jfspeed.JfFastApplication</mainClass>
+                    <!-- 非 MySQL 的数据库驱动不进发行 jar：它们的许可不是 OSI 开源许可
+                         （Oracle JDBC Driver License / 达梦与人大金仓的专有许可），
+                         随 Apache-2.0 产物再分发存在合规风险。它们的 optional 语义本来就是
+                         「按目标库自选」，用别的库时由使用方在自己的构建里显式加进去。 -->
+                    <excludes>
+                        <exclude>
+                            <groupId>com.oracle.database.jdbc</groupId>
+                            <artifactId>ojdbc11</artifactId>
+                        </exclude>
+                        <exclude>
+                            <groupId>com.dameng</groupId>
+                            <artifactId>DmJdbcDriver18</artifactId>
+                        </exclude>
+                        <exclude>
+                            <groupId>cn.com.kingbase</groupId>
+                            <artifactId>kingbase8</artifactId>
+                        </exclude>
+                        <exclude>
+                            <groupId>org.postgresql</groupId>
+                            <artifactId>postgresql</artifactId>
+                        </exclude>
+                    </excludes>
+                </configuration>
+                <executions>
+                    <execution>
+                        <id>repackage</id>
+                        <goals>
+                            <goal>repackage</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+
+</project>

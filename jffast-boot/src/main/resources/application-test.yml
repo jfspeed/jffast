@@ -1,0 +1,23 @@
+spring:
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://${MYSQL_HOST:127.0.0.1}:${MYSQL_PORT:3306}/${MYSQL_DB:jffast}?useUnicode=true&characterEncoding=utf-8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
+    username: ${MYSQL_USER:root}
+    # test1234 为统一测试填充值（与根 docker-compose.yml、README 说明保持一致）；
+    # 仓库凭据扫描把它作为唯一白名单值，其他明文口令一律拒绝入库。生产必须注入真实强口令。
+    password: ${MYSQL_PASSWORD:test1234}
+  data:
+    redis:
+      host: ${REDIS_HOST:127.0.0.1}
+      port: ${REDIS_PORT:6379}
+      # 各应用独立 database，避免多应用共用同一 Sa-Token 会话键空间
+      database: ${REDIS_DATABASE:0}
+      password: ${REDIS_PASSWORD:test1234}
+
+logging:
+  level:
+    cn.jfspeed: info
+
+jffast:
+  swagger:
+    enabled: true

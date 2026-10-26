@@ -1,0 +1,279 @@
+app:
+  name: jffast
+
+jffast:
+  # RSA 密钥对：登录 / 改密时密码的加密传输。
+  # 仓库不存放任何密钥字面量——示例密钥对一旦入库即永久泄露（git 历史不可逆），
+  # 而该私钥的用途正是解密登录密码明文。
+  # dev / test 未配置时由 RsaKeyInitializer 在启动时自动生成一次性密钥对并打印 WARN；
+  # prod 未配置则直接启动失败（fail-fast），强制显式注入。
+  rsa:
+    private-key: ${RSA_PRIVATE_KEY:}
+    public-key: ${RSA_PUBLIC_KEY:}
+  swagger:
+    enabled: true
+  system:
+    # 初始密码（DataInitializer 初始化 admin / 重置密码写入值 / 新密码禁用比对基准）。
+    # test1234 是全项目统一的「公开测试填充值」：目标是新人 clone 后零配置登录。
+    # ⚠️ 它随仓库公开——prod profile 已覆盖为必填（application-prod.yml 无默认值，
+    #    缺 JFFAST_INIT_PASSWORD 直接启动失败），且使用该公开值初始化时启动日志会打 WARN。
+    init-password: ${JFFAST_INIT_PASSWORD:test1234}
+    task:
+      # 异步导入导出线程池队列容量，必须大于 0，否则启动失败（SysTaskRunner 构造器校验）
+      queue-capacity: 100
+    notification:
+      enabled: true
+      # 通知通道（默认关闭）：开启后「通知管理 → 发送」可勾选邮件/短信通道。
+      # 邮件通道还需配置标准 spring.mail.*（示例见 application-dev.yml）；
+      # 短信通道对接任意 HTTP 短信网关（url + body-template，占位符 ${phone}/${title}/${content}）。
+      channel:
+        email:
+          enabled: ${JFFAST_NOTIFY_EMAIL_ENABLED:false}
+          # from: ${JFFAST_NOTIFY_EMAIL_FROM:}   # 发件人，为空时用 spring.mail.username
+        sms:
+          enabled: ${JFFAST_NOTIFY_SMS_ENABLED:false}
+          url: ${JFFAST_NOTIFY_SMS_URL:}
+          # body-template / headers 可按网关协议覆盖，默认：
+          # body-template: '{"phone":"${phone}","title":"${title}","content":"${content}"}'
+  mybatis:
+    # 分页单页封顶条数（PaginationInnerInterceptor.maxLimit）：请求传更大的 pageSize 会被夹到该值，
+    # 避免任意列表接口用 pageSize=1000000 一次读全表。批量导出请走导出接口，不要调高此项。
+    page-max-limit: 500
+    tenant:
+      enabled: false
+      column: tenant_id
+      # 多租户拦截在 Base 默认关闭（隔离能力为商业版特性）；本清单为「开启后需忽略的表」
+      # 的预留声明：菜单/安全/角色菜单/租户表，以及全局维护的通知模板目录
+      # （模板发送流程不读取模板；不忽略时带租户上下文的管理页查询会 Unknown column）
+      ignore-tables:
+        - sys_menu
+        - sys_safe
+        - sys_role_menu
+        - sys_tenant
+        - sys_notification_template
+        - sys_notification_template_group
+    data-scope:
+      enabled: true
+  web:
+    trace-id:
+      enabled: true
+    xss:
+      enabled: true
+  file:
+    # 文件下载前按记录大小预检，0=不限制（大文件全量 byte[] 的长期方案见开发规范）
+    download-max-bytes: 0
+    storage:
+      type: local
+      local:
+        path: upload
+        access-path: /upload
+  security:
+    # 免登录白名单追加项：仅放行登录前必须匿名可达的端点
+    auth-excludes:
+      - /oauth2/client/authorize/**
+      - /oauth2/client/callback/**
+      # 社交登录：authorize（跳第三方）与 callback（第三方回跳）发生在登录前，浏览器无登录态，
+      # 必须匿名可达；bind / unbind / binds 是个人维度的绑定管理，仍需登录态，故**不**排除。
+      # 社交端点由 @ConditionalOnProperty(jffast.social.enabled=true) 控制，
+      # 未启用时控制器根本不注册 ⇒ 排除这两个路径不会暴露任何东西。
+      - /social/authorize
+      - /social/callback
+      # 容器 / K8s 健康探针必须在未登录时可达；其余 actuator 端点仍按环境暴露策略鉴权
+      - /actuator/health/**
+      # 公钥用于加密登录密码，必须在登录前可读（公钥本身非机密）
+      - /sys/rsaPublicKey
+    # Sa-Token 1.46.0 起 JSON 多态反序列化白名单（修复 DefaultTyping RCE）。
+    # 必须列出登录时写入 session 的全部业务实体（含集合元素与嵌套类型），漏配则读 session 静默失败。
+    # SysUser 写入时自带 roleList(List<SysRole>) / deptList(List<SysDept>，含 children 自嵌套) / dataScope(Map)，
+    # 三者缺一即拒收（JDK 的 String/Long/Map/List/java.time 由 Sa-Token 内置放行，无需列出）。
+    # 禁止配置 Object.class —— 等于关闭该安全机制。
+    sa-json-allow-types:
+      - cn.jfspeed.system.entity.SysUser
+      - cn.jfspeed.system.entity.SysRole
+      - cn.jfspeed.system.entity.SysDept
+    # 可信反向代理的 IP / CIDR：只有 TCP 对端命中本列表时，才按 X-Forwarded-For 逐跳回溯真实客户端 IP。
+    # 默认空 = 不信任任何转发头（安全默认）——XFF 是客户端可控请求头，无条件信任等于让
+    # 「按 IP 限流 / IP 白名单」变成一句话就能绕过的摆设。
+    # ⚠️ 反向代理部署下必须填（本项目自带 nginx：前端容器反代后端），否则所有用户会被判成
+    #    同一个 IP（代理自己的地址）而共用配额。填代理所在网段即可，例如：
+    # trusted-proxies:
+    #   - 172.16.0.0/12   # Docker 默认 bridge 网段
+    #   - 127.0.0.1       # 本机直连 / 同机 nginx
+    # 取值来自环境变量 JFFAST_SECURITY_TRUSTED_PROXIES（逗号分隔，如 172.16.0.0/12,127.0.0.1）；
+    # 未设置即空 = 不信任任何转发头。用占位符而非写死空列表：集合绑定时 env 与 yml 同名键的
+    # 优先关系容易踩坑，占位符口径无歧义（部署件即按此变量注入）。
+    trusted-proxies: ${JFFAST_SECURITY_TRUSTED_PROXIES:}
+    # 登录接口 per-IP 限流（与 @RateLimit 的全局桶叠加：全局兜总量，本限流按来源分桶）
+    login-ip-limit:
+      enabled: true
+      # 单 IP 每窗口允许的登录尝试次数（成功也计：只计失败会让撞库「蒙对即清零」）
+      max-attempts: 30
+      window-seconds: 60
+    # 图形验证码 per-IP 限流：GET /sys/getCode 匿名可达，且每次调用都往 Redis 写一个
+    # 带 TTL 的 key（key 由前端传入）——不限流就是一个零成本的 Redis 写入放大点。
+    captcha-ip-limit:
+      enabled: true
+      # 显著小于登录（30）：正常用户一次登录最多取一两次验证码。
+      # 也别设太小——NAT 场景整层楼共用一个公网 IP，误伤会直接挡在登录之外。
+      max-attempts: 10
+      window-seconds: 60
+      message: 验证码获取过于频繁，请稍后再试
+    # 「是否需要验证码」查询 per-IP 限流：GET /sys/needCaptcha 匿名可达且 userName 由调用方指定，
+    # 不限流可被用来批量探测某账号是否已被连续尝试（返回布尔值即足以区分两种状态）。
+    captcha-check-ip-limit:
+      enabled: true
+      # 比登录（30）宽松：前端进入登录页 / 提交前都可能调一次，正常用户远达不到。
+      max-attempts: 60
+      window-seconds: 60
+      message: 请求过于频繁，请稍后再试
+  oauth2:
+    client:
+      enabled: true
+      # 调试用：是否允许接口明文返回第三方 access token。
+      # 默认关闭（见 OAuth2ClientProperties），此处不再覆盖为 true——
+      # 开启后任何持有 system:oauth2client:token 权限的人都可批量导出接入方凭据。
+      expose-token: ${JFFAST_OAUTH2_EXPOSE_TOKEN:false}
+  social:
+    enabled: false
+    providers:
+      github:
+        client-id: ${GITHUB_CLIENT_ID:}
+        client-secret: ${GITHUB_CLIENT_SECRET:}
+        redirect-uri: ${GITHUB_REDIRECT_URI:http://localhost:7200/jffast-api/social/callback?provider=github}
+      gitee:
+        client-id: ${GITEE_CLIENT_ID:}
+        client-secret: ${GITEE_CLIENT_SECRET:}
+        redirect-uri: ${GITEE_REDIRECT_URI:http://localhost:7200/jffast-api/social/callback?provider=gitee}
+  flow:
+    enabled: true
+  job:
+    scheduler:
+      # 单体只有一个进程 ⇒ 由它兼任"默认调度者"：执行 `sys_job` 里**归属为空**的任务
+      # （老数据 / 页面手工新建）。任务也可带 `sys_job.service_name`（`@JfFastJob` 登记时自动填），
+      # 只有归属服务会执行它；归属为空的才落到默认调度者。
+      default-scope: true
+
+server:
+  port: 7200
+  servlet:
+    context-path: /${app.name}-api
+
+spring:
+  # 未显式指定 profile 时默认 dev：新人 clone 后 `mvn spring-boot:run` 即可跑通
+  # （dev 自带数据源/Redis 的本机默认值）。Docker / 生产部署仍必须显式传
+  # SPRING_PROFILES_ACTIVE（Dockerfile 对此 fail-fast 校验）。
+  profiles:
+    default: dev
+    # 只写 `--spring.profiles.active=demo` 也要能起：demo 只描述「演示模式」这一层，
+    # 数据源 / Redis 等基础配置来自 dev。必须在**非 profile 专属**文档里用 group 组内展开 ——
+    # `spring.profiles.include` 写在 application-demo.yml 里会被 Spring Boot 2.4+ 直接判非法
+    # （InvalidConfigDataPropertyException），且无论是否再补 dev 都启动失败。
+    group:
+      demo: [dev]
+  threads:
+    virtual:
+      enabled: true
+  jackson:
+    default-property-inclusion: non_null
+    date-format: yyyy-MM-dd HH:mm:ss
+    time-zone: GMT+8
+  main:
+    allow-bean-definition-overriding: false
+  quartz:
+    # JDBC 存储 + **集群模式**：
+    #   isClustered=false 且 instanceId 固定为 NON_CLUSTERED 时，多实例共享同一套 QRTZ_* 行却
+    #   没有任何互斥 —— 同一 trigger 会被多个 JVM 重复领取/触发，QRTZ_FIRED_TRIGGERS 的
+    #   (instance_id, fired_entry_id) 也会互相踩。改成 isClustered=true + instanceId=AUTO 后，
+    #   各实例靠行锁 + clusterCheckin 保证同一时刻只有一个实例领取 trigger。
+    #   单实例也照此配置：集群检查只是每 20s 一次 SELECT/UPDATE，代价可忽略，省掉"扩容时忘改配置"。
+    # 建表：sql/system_sql.sql 的 Quartz 段（或独立的 sql/quartz.sql），initialize-schema=never 不自动建。
+    # instanceName = Quartz 行分区键（QRTZ_*.SCHED_NAME）：**同库不同应用必须用不同值**，
+    #   否则两个应用会被并进同一个集群、互相领取对方的 trigger（base=JfFastScheduler，Pro 另起一名）。
+    job-store-type: jdbc
+    jdbc:
+      initialize-schema: never
+    properties:
+      org.quartz.scheduler.instanceName: JfFastScheduler
+      org.quartz.scheduler.instanceId: AUTO
+      org.quartz.threadPool.class: org.quartz.simpl.SimpleThreadPool
+      org.quartz.threadPool.threadCount: "10"
+      org.quartz.threadPool.threadPriority: "5"
+      org.quartz.jobStore.driverDelegateClass: org.quartz.impl.jdbcjobstore.StdJDBCDelegate
+      org.quartz.jobStore.tablePrefix: QRTZ_
+      org.quartz.jobStore.isClustered: "true"
+      org.quartz.jobStore.clusterCheckinInterval: "20000"
+      org.quartz.jobStore.misfireThreshold: "60000"
+    auto-startup: true
+    startup-delay: 0s
+    overwrite-existing-jobs: true
+
+logging:
+  config: classpath:logback-spring.xml
+
+# Flowable 工作流引擎配置（flowable.* 为引擎原生配置；jffast.flow.* 见文件顶部 jffast 节点）
+flowable:
+  # 引擎 schema 校验/增量升级开关。**注意：Flowable 8.0.0 在完全空库上不能可靠地自动建表**
+  #（会把空库误判为旧版本走升级路径而失败，实测 FlowableOptimisticLockingException）；
+  # 首次部署必须先导入 sql/flowable_schema/flowable_mysql_all.sql（与 BOM 版本线对齐的官方 DDL），
+  # 本开关保持 true 用于版本校验与后续升级。
+  database-schema-update: true
+  # 只用 process 引擎；Flowable 8 的 process starter 默认把 event-registry 也带入，
+  # 不关闭会与 process 引擎并发建表/升级并抢 schema.version 行（实测启动即 FlowableOptimisticLockingException）。
+  # 键名必须用 Flowable 8 的精确前缀 flowable.eventregistry（门控 ConditionalOnEventRegistry 只认它）。
+  eventregistry:
+    enabled: false
+  # 历史数据级别：none/activity/audit/full
+  history-level: audit
+  # 启用异步执行器（定时事件/异步任务需要）
+  async-executor-activate: true
+  # 流程定义缓存数量
+  process:
+    definition-cache-limit: 100
+  # 关闭不需要的引擎模块（保持轻量）
+  cmmn:
+    enabled: false
+  dmn:
+    enabled: false
+  app:
+    enabled: false
+  idm:
+    enabled: false
+
+sa-token:
+  token-name: token
+  timeout: 2592000
+  active-timeout: -1
+  is-concurrent: true
+  is-share: false
+  token-style: random-64
+  is-log: true
+  filter:
+    enabled: false
+
+mybatis-plus:
+  mapper-locations: classpath:mapper/**/*.xml
+  type-aliases-package: cn.jfspeed.common.base
+  global-config:
+    db-config:
+      id-type: auto
+      insert-strategy: NOT_EMPTY
+      update-strategy: NOT_EMPTY
+  configuration:
+    map-underscore-to-camel-case: true
+    cache-enabled: false
+    call-setters-on-nulls: true
+
+resilience4j:
+  ratelimiter:
+    configs:
+      default:
+        limitRefreshPeriod: 1s
+        timeoutDuration: 0s
+        registerHealthIndicator: true
+    instances:
+      default:
+        baseConfig: default
+        limitForPeriod: 100
+      strictApi:
+        baseConfig: default
+        limitForPeriod: 5

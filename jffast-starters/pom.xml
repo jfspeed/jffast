@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>cn.jfspeed</groupId>
+        <artifactId>jffast</artifactId>
+        <version>1.0.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>jffast-starters</artifactId>
+    <packaging>pom</packaging>
+    <name>jffast-starters</name>
+    <description>jffast Starters - Aggregator for all starter modules</description>
+
+    <modules>
+        <module>jffast-starter-mybatis</module>
+        <module>jffast-starter-web</module>
+        <module>jffast-starter-security</module>
+        <module>jffast-starter-redis</module>
+        <module>jffast-starter-log</module>
+        <module>jffast-starter-file</module>
+        <module>jffast-starter-excel</module>
+        <module>jffast-starter-social</module>
+        <module>jffast-starter-oauth2-client</module>
+        <module>jffast-starter-job</module>
+        <module>jffast-starter-flowable</module>
+        <module>jffast-starter-demo-mode</module>
+    </modules>
+
+</project>

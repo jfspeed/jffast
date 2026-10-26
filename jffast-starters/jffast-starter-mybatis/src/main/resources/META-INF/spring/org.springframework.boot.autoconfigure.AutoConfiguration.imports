@@ -1,0 +1,3 @@
+cn.jfspeed.mybatis.config.JfFastMapperScanConfiguration
+cn.jfspeed.mybatis.config.JfFastMybatisAutoConfiguration
+cn.jfspeed.mybatis.datasource.JfFastDynamicDataSourceAutoConfiguration

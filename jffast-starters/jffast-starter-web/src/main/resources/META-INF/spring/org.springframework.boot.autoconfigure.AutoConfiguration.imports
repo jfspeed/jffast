@@ -1,0 +1,2 @@
+cn.jfspeed.web.config.JfFastWebAutoConfiguration
+cn.jfspeed.web.config.WebSocketAutoConfiguration
