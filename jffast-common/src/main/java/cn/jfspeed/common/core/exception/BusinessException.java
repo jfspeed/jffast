@@ -15,6 +15,7 @@
  */
 package cn.jfspeed.common.core.exception;
 
+import cn.jfspeed.common.core.enums.FrameworkErrorCode;
 import cn.jfspeed.common.core.enums.IErrorCode;
 import cn.jfspeed.common.core.util.MessageUtil;
 
@@ -113,7 +114,7 @@ public class BusinessException extends RuntimeException {
      * @param args 消息参数
      */
     public static BusinessException of(String messageCode, Object... args) {
-        return new BusinessException(400, messageCode, args);
+        return new BusinessException(FrameworkErrorCode.PARAM_ERROR.getCode(), messageCode, args);
     }
 
     /**

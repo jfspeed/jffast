@@ -16,6 +16,7 @@
 package cn.jfspeed.mybatis.interceptor;
 
 import cn.jfspeed.common.core.annotation.IgnoreBaseField;
+import cn.jfspeed.common.core.enums.AuthErrorCode;
 import cn.jfspeed.common.core.exception.BusinessException;
 import cn.jfspeed.mybatis.config.DataScopeContext;
 import com.baomidou.mybatisplus.core.metadata.TableInfo;
@@ -73,7 +74,7 @@ public class DataScopeInnerInterceptor extends JsqlParserSupport implements Inne
             throw e;
         } catch (Exception e) {
             log.error("DataScope interceptor failed, query rejected", e);
-            throw new BusinessException(403, "数据权限校验失败，已拒绝查询");
+            throw new BusinessException(AuthErrorCode.FORBIDDEN.getCode(), "数据权限校验失败，已拒绝查询");
         }
     }
 
@@ -142,7 +143,7 @@ public class DataScopeInnerInterceptor extends JsqlParserSupport implements Inne
             }
         } catch (Exception e) {
             log.error("Failed to inject dataScope condition, query rejected", e);
-            throw new BusinessException(403, "数据权限校验失败，已拒绝查询");
+            throw new BusinessException(AuthErrorCode.FORBIDDEN.getCode(), "数据权限校验失败，已拒绝查询");
         }
     }
 }

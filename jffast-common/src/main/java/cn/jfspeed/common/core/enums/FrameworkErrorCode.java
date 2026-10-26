@@ -23,6 +23,8 @@ public enum FrameworkErrorCode implements IErrorCode {
     SUCCESS(200, "请求成功"),
 
     PARAM_ERROR(400, "参数错误（缺少、格式异常）"),
+    /** 409 Conflict：请求与当前资源状态冲突（幂等拦截、唯一约束冲突等） */
+    CONFLICT(409, "请求冲突"),
     SYSTEM_ERROR(500, "系统错误"),
 
     HTTP_REQUEST_FAILED(900000, "HTTP请求失败"),

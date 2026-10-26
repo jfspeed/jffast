@@ -17,9 +17,12 @@ package cn.jfspeed.system.service;
 
 import cn.hutool.core.util.ArrayUtil;
 import cn.hutool.core.util.StrUtil;
+import cn.jfspeed.common.core.enums.AuthErrorCode;
+import cn.jfspeed.common.core.enums.FrameworkErrorCode;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.transaction.annotation.Transactional;
 import cn.jfspeed.common.core.base.BaseConstant;
 import cn.jfspeed.common.core.exception.BusinessException;
@@ -64,6 +67,8 @@ public class SysRoleService extends BaseService<SysRoleMapper, SysRole>{
 
     private static final int DATA_SCOPE_ALL = 1;
     private static final int DATA_SCOPE_CUSTOM_DEPT = 5;
+    /** 与 {@code sql/system_sql.sql} 的 `uk_sys_role_tenant_role_key` 同名，仅用于内部区分撞的是哪个唯一约束。 */
+    private static final String ROLE_KEY_UNIQUE_INDEX = "uk_sys_role_tenant_role_key";
 
     @Resource
     private SysMenuService sysMenuService;
@@ -304,18 +309,18 @@ public class SysRoleService extends BaseService<SysRoleMapper, SysRole>{
     public OperatorContext loadOperatorContext() {
         Long operatorId = LoginUtil.getLoginUserId();
         if (operatorId == null) {
-            throw new BusinessException(403, "操作者数据范围异常");
+            throw new BusinessException(AuthErrorCode.FORBIDDEN.getCode(), "操作者数据范围异常");
         }
         if (LoginUtil.isSuperAdmin()) {
             return new OperatorContext(operatorId, new ArrayList<>(), Integer.MAX_VALUE, new HashSet<>(), true);
         }
         List<Long> roleIds = LoginUtil.getRoleIdList().stream().filter(Objects::nonNull).distinct().toList();
         if (roleIds.isEmpty()) {
-            throw new BusinessException(403, "操作者数据范围异常");
+            throw new BusinessException(AuthErrorCode.FORBIDDEN.getCode(), "操作者数据范围异常");
         }
         List<SysRole> roles = listByIds(roleIds);
         if (roles == null || roles.size() != roleIds.size()) {
-            throw new BusinessException(403, "操作者数据范围异常");
+            throw new BusinessException(AuthErrorCode.FORBIDDEN.getCode(), "操作者数据范围异常");
         }
         int rank = roles.stream().mapToInt(role -> roleRank(role.getDataScope())).max().orElse(0);
         Set<Long> menuIds = new HashSet<>();
@@ -349,17 +354,17 @@ public class SysRoleService extends BaseService<SysRoleMapper, SysRole>{
             if (!superAdmin
                     || !Objects.equals(effective.roleKey(), existing.getRoleKey())
                     || !Objects.equals(effective.dataScope(), existing.getDataScope())) {
-                throw new BusinessException(403, "内置超管角色不允许删除/修改标识");
+                throw new BusinessException(AuthErrorCode.FORBIDDEN.getCode(), "内置超管角色不允许删除/修改标识");
             }
         }
 
         // 规则 2：内置 roleKey 在已有角色上不可改名；非超管创建/改名不得使用内置 roleKey
         boolean renamed = existing == null || !Objects.equals(existing.getRoleKey(), effective.roleKey());
         if (existing != null && isBuiltInRoleKey(existing.getRoleKey()) && renamed) {
-            throw new BusinessException(403, "内置角色标识不允许修改");
+            throw new BusinessException(AuthErrorCode.FORBIDDEN.getCode(), "内置角色标识不允许修改");
         }
         if (!superAdmin && renamed && isBuiltInRoleKey(effective.roleKey())) {
-            throw new BusinessException(403, "无权使用内置角色标识");
+            throw new BusinessException(AuthErrorCode.FORBIDDEN.getCode(), "无权使用内置角色标识");
         }
 
         if (superAdmin) {
@@ -368,15 +373,15 @@ public class SysRoleService extends BaseService<SysRoleMapper, SysRole>{
 
         // 规则 3：非超管不得设置全部数据/自定义部门范围
         if (effective.dataScope() == DATA_SCOPE_ALL || effective.dataScope() == DATA_SCOPE_CUSTOM_DEPT) {
-            throw new BusinessException(403, "无权设置该数据范围");
+            throw new BusinessException(AuthErrorCode.FORBIDDEN.getCode(), "无权设置该数据范围");
         }
 
         // 规则 4：非超管秩必须 >0 且不得高于操作者
         if (operator.rank() == 0) {
-            throw new BusinessException(403, "操作者数据范围异常");
+            throw new BusinessException(AuthErrorCode.FORBIDDEN.getCode(), "操作者数据范围异常");
         }
         if (roleRank(effective.dataScope()) > operator.rank()) {
-            throw new BusinessException(403, "无权设置高于自己的数据范围");
+            throw new BusinessException(AuthErrorCode.FORBIDDEN.getCode(), "无权设置高于自己的数据范围");
         }
 
         // 规则 5：请求的菜单（含祖先）必须是操作者已有菜单的子集
@@ -384,19 +389,45 @@ public class SysRoleService extends BaseService<SysRoleMapper, SysRole>{
             Set<Long> requested = Arrays.stream(expandMenuAncestors(req.getMenuIds()))
                     .collect(Collectors.toCollection(LinkedHashSet::new));
             if (!operator.menuIds().containsAll(requested)) {
-                throw new BusinessException(403, "无权分配未拥有的菜单或按钮");
+                throw new BusinessException(AuthErrorCode.FORBIDDEN.getCode(), "无权分配未拥有的菜单或按钮");
             }
         }
 
         // 规则 6：非超管不得修改自己所属的角色
         if (roleId != null && hasUserRole(operator.operatorId(), roleId)) {
-            throw new BusinessException(403, "不能修改自己所属的角色");
+            throw new BusinessException(AuthErrorCode.FORBIDDEN.getCode(), "不能修改自己所属的角色");
         }
 
         // 规则 7：非超管不得操作 dataScope=1 的角色
         if (existing != null && Integer.valueOf(DATA_SCOPE_ALL).equals(existing.getDataScope())) {
-            throw new BusinessException(403, "无权操作该角色");
+            throw new BusinessException(AuthErrorCode.FORBIDDEN.getCode(), "无权操作该角色");
         }
+    }
+
+    /**
+     * 唯一索引冲突的可读提示。控制器的 {@code checkRoleNameAndKey} 是「先查后插」，并发下两个
+     * 请求能双双通过，且 roleKey 在查重之后还会被 {@code resolveEffectiveRole} 改写，
+     * 真正的兜底是库侧 uk_sys_role_tenant_role_key；冲突在此翻译成本句，避免前端收到 500 与 SQL 原文。
+     *
+     * <p>{@code sys_role} 上可能撞的唯一约束有两个（主键 id、role_key 组合键），提示必须分开——
+     * 把 id 冲突报成「标识已被占用」会把人往错的方向查。索引名只用于内部分支判断，不外传。
+     */
+    private BusinessException duplicateKeyFailure(SysRole role, DuplicateKeyException e) {
+        String detail = duplicateKeyDetail(e);
+        String message = detail.contains(ROLE_KEY_UNIQUE_INDEX)
+                ? "角色标识已被占用：" + role.getRoleKey()
+                : "角色 ID 冲突，请刷新后重试";
+        return new BusinessException(FrameworkErrorCode.CONFLICT.getCode(), message);
+    }
+
+    /** 沿 cause 链收集驱动/SQL 异常原文，MySQL 的 "Duplicate entry ... for key ..." 可能只出现在根因里。 */
+    private static String duplicateKeyDetail(Throwable e) {
+        StringBuilder sb = new StringBuilder();
+        Throwable t = e;
+        for (int depth = 0; t != null && depth < 8; depth++, t = t.getCause()) {
+            sb.append(t.getMessage()).append(' ');
+        }
+        return sb.toString();
     }
 
     /**
@@ -408,7 +439,11 @@ public class SysRoleService extends BaseService<SysRoleMapper, SysRole>{
         if (role.getId() == null) {
             throw new BusinessException("角色 ID 不能为空");
         }
-        this.save(role);
+        try {
+            this.save(role);
+        } catch (DuplicateKeyException e) {
+            throw duplicateKeyFailure(role, e);
+        }
         insertRoleMenu(role.getId(), role.getMenuIds());
         if (role.getDataScope() == DATA_SCOPE_CUSTOM_DEPT && ArrayUtil.isNotEmpty(role.getDeptIds())) {
             insertRoleDept(role.getId(), role.getDeptIds());
@@ -436,7 +471,13 @@ public class SysRoleService extends BaseService<SysRoleMapper, SysRole>{
                 && syncDepts && role.getDeptIds() != null
                 && hasDeptBindingsChanged(role.getId(), role.getDeptIds());
 
-        if (!this.updateById(role)) {
+        boolean updated;
+        try {
+            updated = this.updateById(role);
+        } catch (DuplicateKeyException e) {
+            throw duplicateKeyFailure(role, e);
+        }
+        if (!updated) {
             throw new BusinessException("角色不存在");
         }
 

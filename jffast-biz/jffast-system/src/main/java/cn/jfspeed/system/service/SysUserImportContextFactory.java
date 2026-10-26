@@ -15,6 +15,7 @@
  */
 package cn.jfspeed.system.service;
 
+import cn.jfspeed.common.core.enums.AuthErrorCode;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -45,7 +46,7 @@ public class SysUserImportContextFactory {
     public SysUserImportContext create() {
         Object principal = LoginUtil.getLoginSysUser();
         if (!(principal instanceof SysUser loginUser) || loginUser.getId() == null) {
-            throw new BusinessException(403, "登录状态无效，请重新登录");
+            throw new BusinessException(AuthErrorCode.FORBIDDEN.getCode(), "登录状态无效，请重新登录");
         }
         boolean superAdmin = LoginUtil.isSuperAdmin();
         List<SysDept> depts = sysDeptScopeQuery.listVisibleDepts();

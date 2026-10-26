@@ -15,6 +15,7 @@
  */
 package cn.jfspeed.system.service;
 
+import cn.jfspeed.common.core.enums.FrameworkErrorCode;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -410,7 +411,7 @@ public class SysNotificationService extends BaseService<SysNotificationMapper, S
             try {
                 ids.add(Long.valueOf(value));
             } catch (NumberFormatException e) {
-                throw new BusinessException(400, "接收人 ID 格式不正确：" + value);
+                throw new BusinessException(FrameworkErrorCode.PARAM_ERROR.getCode(), "接收人 ID 格式不正确：" + value);
             }
         }
         return ids;

@@ -17,6 +17,7 @@ package cn.jfspeed.flow.service;
 
 import cn.hutool.core.util.StrUtil;
 import cn.jfspeed.common.core.base.BaseConstant;
+import cn.jfspeed.common.core.enums.AuthErrorCode;
 import cn.jfspeed.common.core.exception.BusinessException;
 import cn.jfspeed.common.security.util.LoginUtil;
 import cn.jfspeed.flowable.service.FlowService;
@@ -55,10 +56,10 @@ public class FlowAccessService {
             if (task.getAssignee().equals(userId)) {
                 return;
             }
-            throw new BusinessException(403, "任务已被他人签收");
+            throw new BusinessException(AuthErrorCode.FORBIDDEN.getCode(), "任务已被他人签收");
         }
         if (!flowService.isTaskCandidate(task.getId(), userId)) {
-            throw new BusinessException(403, "无权签收该任务：不在候选人范围");
+            throw new BusinessException(AuthErrorCode.FORBIDDEN.getCode(), "无权签收该任务：不在候选人范围");
         }
     }
 
@@ -69,12 +70,12 @@ public class FlowAccessService {
         }
         if (StrUtil.isNotBlank(task.getAssignee())) {
             if (!task.getAssignee().equals(userId)) {
-                throw new BusinessException(403, "无权办理该任务：当前办理人不是本人");
+                throw new BusinessException(AuthErrorCode.FORBIDDEN.getCode(), "无权办理该任务：当前办理人不是本人");
             }
             return;
         }
         if (!flowService.isTaskCandidate(task.getId(), userId)) {
-            throw new BusinessException(403, "无权办理该任务：不在候选人范围");
+            throw new BusinessException(AuthErrorCode.FORBIDDEN.getCode(), "无权办理该任务：不在候选人范围");
         }
     }
 
@@ -84,7 +85,7 @@ public class FlowAccessService {
             return;
         }
         if (StrUtil.isBlank(task.getAssignee()) || !task.getAssignee().equals(userId)) {
-            throw new BusinessException(403, "无权转办该任务：当前办理人不是本人");
+            throw new BusinessException(AuthErrorCode.FORBIDDEN.getCode(), "无权转办该任务：当前办理人不是本人");
         }
     }
 
@@ -96,7 +97,7 @@ public class FlowAccessService {
                 || userId.equals(flowService.getProcessInitiatorUserId(task.getProcessInstanceId()))) {
             return;
         }
-        throw new BusinessException(403, "无权查看该任务");
+        throw new BusinessException(AuthErrorCode.FORBIDDEN.getCode(), "无权查看该任务");
     }
 
     /** 流程实例详情：发起人或参与过审批的用户可见。 */
@@ -106,7 +107,7 @@ public class FlowAccessService {
                 || flowService.isProcessParticipant(processInstanceId, userId)) {
             return;
         }
-        throw new BusinessException(403, "无权查看该流程实例");
+        throw new BusinessException(AuthErrorCode.FORBIDDEN.getCode(), "无权查看该流程实例");
     }
 
     /** 取消流程实例：仅发起人（或超管）可取消。 */
@@ -114,6 +115,6 @@ public class FlowAccessService {
         if (isSuperAdmin() || userId.equals(flowService.getProcessInitiatorUserId(processInstanceId))) {
             return;
         }
-        throw new BusinessException(403, "无权取消该流程实例");
+        throw new BusinessException(AuthErrorCode.FORBIDDEN.getCode(), "无权取消该流程实例");
     }
 }

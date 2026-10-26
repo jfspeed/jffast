@@ -70,9 +70,45 @@ public class SocialLoginService {
         SocialState state = new SocialState();
         state.setRandom(UUID.randomUUID().toString().replace("-", ""));
         state.setProvider(normalizedProvider);
-        state.setTargetUri(targetUri);
+        state.setTargetUri(sanitizeTargetUri(targetUri));
         state.setExpiresAt(System.currentTimeMillis() + STATE_TTL_MILLIS);
         return loginProvider.getAuthorizationUrl(state.encode(resolveStateSecret()));
+    }
+
+    /**
+     * 回跳地址（{@code targetUri}）的白名单：**只接受站内相对路径**。
+     *
+     * <p>为什么必须限制：{@code targetUri} 由客户端传入，服务端只是给它**签名**（防篡改），
+     * 但签名并不改变"值来自攻击者"这一事实 —— 攻击者可以让服务端替自己签一个
+     * {@code https://evil.com}，回调时原样回显，前端再据此跳转 ⇒ **开放重定向**。
+     * 签名防的是"改"，防不了"一开始就填了别的地址"。
+     *
+     * <p>放行规则：单个 {@code /} 开头的相对路径；拒绝绝对 URL、协议相对 URL（{@code //}）、
+     * 含协议分隔符 / 反斜杠 / {@code ..} / 控制字符的串。不合法一律当作"没有回跳地址"。
+     *
+     * @param targetUri 客户端传入的原始值
+     * @return 合法时返回规范化后的相对路径，否则返回 null
+     */
+    static String sanitizeTargetUri(String targetUri) {
+        if (StrUtil.isBlank(targetUri)) {
+            return null;
+        }
+        // 控制字符检查必须**先于** trim：String.trim() 会吃掉首尾的 \0 \n \r 等
+        // （它们都 <= U+0020），先 trim 再检查会让 "/path\u0000" 变成合法值而绕过白名单。
+        for (int i = 0; i < targetUri.length(); i++) {
+            char c = targetUri.charAt(i);
+            if (c < 0x20 || c == 0x7F) {
+                return null;
+            }
+        }
+        String uri = targetUri.trim();
+        if (!uri.startsWith("/") || uri.startsWith("//")) {
+            return null;
+        }
+        if (uri.contains("://") || uri.contains("\\") || uri.contains("..")) {
+            return null;
+        }
+        return uri;
     }
 
     public SocialLoginResult callback(String code, String state) {
@@ -96,7 +132,8 @@ public class SocialLoginService {
         SocialLoginResult result = new SocialLoginResult();
         result.setSocialUser(socialUser);
         result.setBindTicket(issueBindTicket(socialUser));
-        result.setTargetUri(socialState.getTargetUri());
+        // 出参侧再过一次白名单：state 虽由服务端签发，但回显给前端的地址必须始终是站内相对路径
+        result.setTargetUri(sanitizeTargetUri(socialState.getTargetUri()));
 
         SocialBind existBind = findByProviderAndOpenId(socialState.getProvider().toLowerCase(), socialUser.getOpenId());
         if (existBind != null) {
@@ -120,7 +157,7 @@ public class SocialLoginService {
 
         SocialBindTicket bindTicket = SocialBindTicket.decode(ticket, resolveStateSecret());
         if (bindTicket.getUserId() != null && !bindTicket.getUserId().equals(user.getId())) {
-            throw new BusinessException(403, "绑定票据与当前登录用户不匹配");
+            throw new BusinessException(AuthErrorCode.FORBIDDEN.getCode(), "绑定票据与当前登录用户不匹配");
         }
 
         SocialUser socialUser = bindTicket.toSocialUser();
@@ -228,7 +265,7 @@ public class SocialLoginService {
         boolean hasClientSecret = socialProperties.getProviders().values().stream()
                 .anyMatch(config -> StrUtil.isNotBlank(config.getClientSecret()));
         if (!hasClientSecret) {
-            throw new BusinessException(500,
+            throw new BusinessException(FrameworkErrorCode.SYSTEM_ERROR.getCode(),
                     "社交登录未配置签名密钥，请设置 jffast.social.state-secret 或 provider client-secret");
         }
         return socialProperties.getProviders().entrySet().stream()

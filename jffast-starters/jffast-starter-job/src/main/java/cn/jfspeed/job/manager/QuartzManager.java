@@ -16,6 +16,7 @@
 package cn.jfspeed.job.manager;
 
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 
 import org.quartz.CronScheduleBuilder;
@@ -116,11 +117,16 @@ public class QuartzManager {
     /**
      * 确保 JobDetail 存在但**不排期**（`storeDurably`），供"立即执行一次"使用 ——
      * 这样对一个"已暂停 / 尚未排期"的任务也能手工触发，而无需先给它编一个 cron。
+     *
+     * <p>⚠️ 已存在时**必须把最新的 JobDataMap 写回**：JobDataMap 里存的是 `invokeTarget`
+     * （真正被调用的 bean.method）。若只在"不存在"时写入，那么"改了执行目标"后点「立即执行」
+     * 仍然会跑**旧目标**（触发器重建前留下的历史数据），表现为"改了没反应"。
      */
     public void ensureJobExists(String jobName, String jobGroup, Class<? extends Job> jobClass,
                                 Map<String, Object> params) throws SchedulerException {
         JobKey jobKey = JobKey.jobKey(jobName, jobGroup);
         if (scheduler.checkExists(jobKey)) {
+            refreshJobDataMap(jobKey, params);
             return;
         }
         JobDetail jobDetail = JobBuilder.newJob(jobClass)
@@ -131,6 +137,67 @@ public class QuartzManager {
             params.forEach((key, value) -> jobDetail.getJobDataMap().put(key, value));
         }
         scheduler.addJob(jobDetail, true);
+    }
+
+    /**
+     * 把最新的 JobDataMap 写回已存在的 JobDetail（只改值变化了的键）。
+     *
+     * <p>{@code addJob(jobDetail, true)} 只替换 JobDetail，**不影响已挂在其上的触发器** ——
+     * 所以「立即执行」能立刻用上新目标，而定时排期不受干扰。
+     */
+    private void refreshJobDataMap(JobKey jobKey, Map<String, Object> params) throws SchedulerException {
+        if (params == null || params.isEmpty()) {
+            return;
+        }
+        JobDetail existing = scheduler.getJobDetail(jobKey);
+        if (existing == null) {
+            return;
+        }
+        boolean changed = params.entrySet().stream()
+                .anyMatch(e -> !Objects.equals(e.getValue(), existing.getJobDataMap().get(e.getKey())));
+        if (!changed) {
+            return;
+        }
+        existing.getJobDataMap().putAll(params);
+        scheduler.addJob(existing, true);
+    }
+
+    /**
+     * 取本进程当前任务写入 JobDataMap 的值（没有该 JobDetail 时返回 null）。
+     * 供调度对账判断"调用目标是否变过"。
+     */
+    public Object getJobDataValue(String jobName, String jobGroup, String key) throws SchedulerException {
+        JobDetail jobDetail = scheduler.getJobDetail(JobKey.jobKey(jobName, jobGroup));
+        if (jobDetail == null) {
+            return null;
+        }
+        return jobDetail.getJobDataMap().get(key);
+    }
+
+    /**
+     * 取本进程当前触发器的失火策略，换算回 {@code sys_job.misfire_policy} 的口径
+     * （1=立即执行 2=放弃错过的执行 3=下次执行）；没有该触发器时返回 null。
+     *
+     * <p>口径对应（与 {@link #buildCronSchedule} 一一对应）：
+     * <ul>
+     *   <li>"1" → {@code MISFIRE_INSTRUCTION_FIRE_ONCE_NOW}(1)</li>
+     *   <li>"2" → {@code MISFIRE_INSTRUCTION_IGNORE_MISFIRE_POLICY}(-1)</li>
+     *   <li>"3" → {@code MISFIRE_INSTRUCTION_DO_NOTHING}(2)</li>
+     * </ul>
+     *
+     * <p>失火策略是**触发器级**属性，JDBC jobstore 里无法就地修改，只能重建触发器 ——
+     * 所以对账时必须能读出当前值，才能判断"策略是否变过"。
+     */
+    public String getMisfirePolicy(String jobName, String jobGroup) throws SchedulerException {
+        Trigger trigger = scheduler.getTrigger(TriggerKey.triggerKey(jobName, jobGroup));
+        if (!(trigger instanceof CronTrigger cronTrigger)) {
+            return null;
+        }
+        return switch (cronTrigger.getMisfireInstruction()) {
+            case CronTrigger.MISFIRE_INSTRUCTION_FIRE_ONCE_NOW -> "1";
+            case Trigger.MISFIRE_INSTRUCTION_IGNORE_MISFIRE_POLICY -> "2";
+            default -> "3";
+        };
     }
 
     public void updateJobCron(String jobName, String jobGroup, String cronExpression) throws SchedulerException {

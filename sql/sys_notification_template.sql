@@ -6,7 +6,9 @@ CREATE TABLE IF NOT EXISTS `sys_notification_template_group` (
     `description`     VARCHAR(500)    NULL     COMMENT '描述',
     `status`          TINYINT         NOT NULL DEFAULT 1 COMMENT '状态：0-禁用，1-启用',
     `sort`            INT             NOT NULL DEFAULT 0 COMMENT '排序',
-    `is_deleted`      TINYINT         NOT NULL DEFAULT 0 COMMENT '逻辑删除：0-未删除，1-已删除',
+    -- 本表**不设** is_deleted：Base 未启用逻辑删除（无 @TableLogic，删除为物理删除），
+    -- 建一个没人写、没人过滤的死列只会让"表结构 ↔ 实体"对不上账。
+    -- 需要逻辑删除的表：自己加 is_deleted 列 + @TableLogic，两者必须同时到位。
     `create_by`       BIGINT          NULL     COMMENT '创建人ID',
     `create_time`     DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     `update_by`       BIGINT          NULL     COMMENT '更新人ID',
@@ -29,7 +31,7 @@ CREATE TABLE IF NOT EXISTS `sys_notification_template` (
     `recipient_type`  VARCHAR(50)     NULL     DEFAULT 'all' COMMENT '默认接收人类型：all-全体/role-角色/dept-部门/user-用户',
     `status`          TINYINT         NOT NULL DEFAULT 1 COMMENT '状态：0-禁用，1-启用',
     `remark`          VARCHAR(500)    NULL     COMMENT '备注',
-    `is_deleted`      TINYINT         NOT NULL DEFAULT 0 COMMENT '逻辑删除：0-未删除，1-已删除',
+    -- 同上：本表不设 is_deleted（Base 未启用逻辑删除）。
     `create_by`       BIGINT          NULL     COMMENT '创建人ID',
     `create_time`     DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     `update_by`       BIGINT          NULL     COMMENT '更新人ID',

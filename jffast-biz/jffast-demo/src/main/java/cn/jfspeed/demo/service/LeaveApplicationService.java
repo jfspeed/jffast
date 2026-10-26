@@ -15,6 +15,7 @@
  */
 package cn.jfspeed.demo.service;
 
+import cn.jfspeed.common.core.enums.FrameworkErrorCode;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import cn.hutool.core.bean.BeanUtil;
 import cn.hutool.core.util.StrUtil;
@@ -68,7 +69,7 @@ public class LeaveApplicationService extends BaseService<LeaveApplicationMapper,
      */
     public LeaveApplication getOwnedById(Long id) {
         if (id == null) {
-            throw new BusinessException(400, "请假申请 ID 不能为空");
+            throw new BusinessException(FrameworkErrorCode.PARAM_ERROR.getCode(), "请假申请 ID 不能为空");
         }
         LeaveApplication entity = getById(id);
         if (entity == null) {

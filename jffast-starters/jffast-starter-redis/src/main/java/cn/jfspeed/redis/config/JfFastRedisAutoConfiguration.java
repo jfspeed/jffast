@@ -35,12 +35,9 @@ import org.springframework.data.redis.serializer.RedisSerializer;
 import org.springframework.data.redis.serializer.StringRedisSerializer;
 import com.fasterxml.jackson.annotation.JsonAutoDetect;
 import com.fasterxml.jackson.annotation.PropertyAccessor;
-import tools.jackson.databind.DatabindContext;
 import tools.jackson.databind.DefaultTyping;
-import tools.jackson.databind.JavaType;
 import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.json.JsonMapper;
-import tools.jackson.databind.jsontype.PolymorphicTypeValidator;
 
 import java.time.Duration;
 
@@ -60,7 +57,9 @@ public class JfFastRedisAutoConfiguration {
             sb.append(target.getClass().getName());
             sb.append(method.getName());
             for (Object obj : params) {
-                sb.append(obj.toString());
+                // append(Object) 而不是 obj.toString()：被缓存方法的入参可以为 null，
+                // 在这里抛 NPE 会让一次普通查询变成 500。
+                sb.append(obj);
             }
             return sb.toString();
         };
@@ -99,34 +98,13 @@ public class JfFastRedisAutoConfiguration {
                 .changeDefaultVisibility(v ->
                         v.withVisibility(PropertyAccessor.ALL, JsonAutoDetect.Visibility.ANY))
                 .activateDefaultTyping(
-                        ALLOW_ALL_SUB_TYPES,
+                        RedisPolymorphicTypeValidator.INSTANCE,
                         DefaultTyping.NON_FINAL
                 )
                 .build();
 
         return new JacksonJsonRedisSerializer<>(objectMapper, Object.class);
     }
-
-    /**
-     * Jackson 3 中 {@code LaissezFaireSubTypeValidator} 已降级为包私有，此处按其原语义复刻：
-     * 仅用于 Redis 值反序列化（数据由本系统写入），允许全部子类型。
-     */
-    private static final PolymorphicTypeValidator ALLOW_ALL_SUB_TYPES = new PolymorphicTypeValidator() {
-        @Override
-        public Validity validateBaseType(DatabindContext ctxt, JavaType baseType) {
-            return Validity.INDETERMINATE;
-        }
-
-        @Override
-        public Validity validateSubClassName(DatabindContext ctxt, JavaType baseType, String subClassName) {
-            return Validity.ALLOWED;
-        }
-
-        @Override
-        public Validity validateSubType(DatabindContext ctxt, JavaType baseType, JavaType subType) {
-            return Validity.ALLOWED;
-        }
-    };
 
     @Bean
     public RedisUtil redisUtil(RedisTemplate<String, Object> redisTemplate) {

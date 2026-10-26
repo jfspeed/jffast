@@ -70,7 +70,7 @@ public final class SignedStateUtil {
 
     private static String digest(String body, String secret) {
         if (StrUtil.isBlank(secret)) {
-            throw new BusinessException(500, "社交登录未配置签名密钥");
+            throw new BusinessException(FrameworkErrorCode.SYSTEM_ERROR.getCode(), "社交登录未配置签名密钥");
         }
         return SecureUtil.hmacSha256(secret).digestHex(body);
     }

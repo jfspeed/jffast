@@ -35,6 +35,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -246,7 +247,16 @@ public class JobScheduler implements CommandLineRunner, DisposableBean {
                 Class<? extends Job> jobClass = jobClassOf(row);
                 String currentClass = quartzManager.getJobClassName(row.getJobName(), row.getJobGroup());
                 boolean classChanged = currentClass != null && !currentClass.equals(jobClass.getName());
-                if (currentCron == null || firstSync || classChanged
+                // ⚠️ 调用目标（invokeTarget）与失火策略同样只写在 JobDataMap / 触发器里，
+                // **不改 cron 时也要重建**，否则"在任务页改了执行目标"静默不生效，
+                // 仍按旧目标执行（且「立即执行」也会跑旧目标），直到服务重启才恢复。
+                boolean targetChanged = !Objects.equals(
+                        quartzManager.getJobDataValue(row.getJobName(), row.getJobGroup(), "invokeTarget"),
+                        row.getInvokeTarget());
+                boolean misfireChanged = !Objects.equals(
+                        effectiveMisfirePolicy(quartzManager.getMisfirePolicy(row.getJobName(), row.getJobGroup())),
+                        effectiveMisfirePolicy(row.getMisfirePolicy()));
+                if (currentCron == null || firstSync || classChanged || targetChanged || misfireChanged
                         || !currentCron.equalsIgnoreCase(row.getCronExpression())) {
                     quartzManager.createJob(row.getJobName(), row.getJobGroup(), row.getCronExpression(),
                             jobClass, buildJobDataMap(row), row.getMisfirePolicy());
@@ -376,6 +386,14 @@ public class JobScheduler implements CommandLineRunner, DisposableBean {
         params.put("misfirePolicy", row.getMisfirePolicy());
         params.put("concurrent", row.getConcurrent());
         return params;
+    }
+
+    /**
+     * 失火策略的**生效值**：{@code sys_job.misfire_policy} 允许为空，空即"下次执行"（口径 3）。
+     * 对账时两侧都换算成生效值再比，否则"null vs 3"会被误判成"改过"而白白重建触发器。
+     */
+    private String effectiveMisfirePolicy(String policy) {
+        return StrUtil.isBlank(policy) ? "3" : policy.trim();
     }
 
     private void startRefresher() {

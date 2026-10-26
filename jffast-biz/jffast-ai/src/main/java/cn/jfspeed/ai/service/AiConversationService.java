@@ -17,6 +17,7 @@ package cn.jfspeed.ai.service;
 
 import cn.hutool.core.util.StrUtil;
 import cn.jfspeed.ai.entity.AiMessage;
+import cn.jfspeed.common.core.enums.AuthErrorCode;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import cn.jfspeed.ai.entity.AiConversation;
@@ -75,7 +76,7 @@ public class AiConversationService extends BaseService<AiConversationMapper, AiC
             throw new BusinessException("对话不存在");
         }
         if (!isSuperAdmin() && !Objects.equals(conversation.getUserId(), LoginUtil.getLoginUserId())) {
-            throw new BusinessException(403, "无权访问该对话");
+            throw new BusinessException(AuthErrorCode.FORBIDDEN.getCode(), "无权访问该对话");
         }
         return conversation;
     }

@@ -15,6 +15,7 @@
  */
 package cn.jfspeed.security.aspect;
 
+import cn.jfspeed.common.core.enums.FrameworkErrorCode;
 import java.lang.reflect.Method;
 
 import org.aspectj.lang.ProceedingJoinPoint;
@@ -62,7 +63,7 @@ public class IdempotentAspect {
         boolean acquired = RedisUtil.tryLock(redisKey, requestId, idempotent.expire() * 1000L, 0);
         if (!acquired) {
             // 裸 RuntimeException 会被兜底处理器映射成 500，重复提交应显式表达为 409
-            throw new BusinessException(409, idempotent.message());
+            throw new BusinessException(FrameworkErrorCode.CONFLICT.getCode(), idempotent.message());
         }
 
         try {

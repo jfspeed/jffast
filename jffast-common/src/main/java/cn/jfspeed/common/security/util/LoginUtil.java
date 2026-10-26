@@ -316,14 +316,44 @@ public class LoginUtil {
     }
 
     /**
-     * 当前登录用户是否超级管理员（角色标识或内置角色 ID 命中其一即可）
+     * 当前登录用户是否超级管理员（角色标识或内置角色 ID 命中其一即可）。
+     *
+     * <p><b>只认 {@link BaseConstant#ROLE_SUPER_ADMIN}（"super_admin"）或内置超管角色 ID（1L）</b>。
+     *
+     * <p>⚠️ 这里曾误用 {@code BaseConstant.SUPER_ADMIN}（值 {@code "admin"}）——那是**超管用户名**
+     * 常量，不是角色标识；而 {@code BaseConstant.ROLE_ADMIN}（同样是 {@code "admin"}）是
+     * **部门级管理员**角色的 roleKey。两者字面量相同，于是任何持有 roleKey="admin" 角色的
+     * 普通用户都会被本方法判成超管，进而跳过请假单归属校验、异步任务归属过滤、角色写入校验
+     * （{@code validateRoleWrite} 的 superAdmin 早退）等**授权/归属短路开关**。
+     * 本仓其余三处同类判定（{@code AiConversationService} / {@code FlowAccessService} /
+     * {@code SysUserController}）用的都是 {@code ROLE_SUPER_ADMIN}，本方法应与之保持一致。
      */
     public static boolean isSuperAdmin() {
         if (getLoginSysUser() == null) {
             return false;
         }
-        return getRoleCodeList().contains(BaseConstant.SUPER_ADMIN)
-                || getRoleIdList().contains(BaseConstant.ROLE_ID_SUPER_ADMIN_LONG);
+        return isSuperAdminByRole(getRoleCodeList(), getRoleIdList());
+    }
+
+    /**
+     * 超管判定的纯逻辑（包内可见，供单测钉住语义）。
+     *
+     * <p><b>不变量</b>：只有 roleKey = {@link BaseConstant#ROLE_SUPER_ADMIN}（"super_admin"）
+     * 或内置超管角色 ID（1L）才算超管。
+     *
+     * <p>⚠️ 历史上此处误用 {@code BaseConstant.SUPER_ADMIN}（值 "admin"，那是**超管用户名**）。
+     * 由于 {@code BaseConstant.ROLE_ADMIN}（"admin"）是**部门级管理员**角色的 roleKey，
+     * 字面量相同 ⇒ 持有 roleKey="admin" 角色的普通用户会被误判为超管，从而跳过
+     * 请假单归属校验、异步任务归属过滤、角色写入校验等授权/归属短路开关。
+     *
+     * @param roleCodes 当前用户的角色标识列表（roleKey）
+     * @param roleIds   当前用户的角色 ID 列表
+     * @return 是否超级管理员
+     */
+    static boolean isSuperAdminByRole(List<String> roleCodes, List<Long> roleIds) {
+        boolean byRoleKey = roleCodes != null && roleCodes.contains(BaseConstant.ROLE_SUPER_ADMIN);
+        boolean byRoleId = roleIds != null && roleIds.contains(BaseConstant.ROLE_ID_SUPER_ADMIN_LONG);
+        return byRoleKey || byRoleId;
     }
 
     public static void updateUser(Object user) {

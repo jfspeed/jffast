@@ -15,6 +15,7 @@
  */
 package cn.jfspeed.system.service;
 
+import cn.jfspeed.common.core.enums.AuthErrorCode;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -151,7 +152,7 @@ public class SysUserService extends BaseService<SysUserMapper, SysUser>{
         // INV-1：更新时不得把非空绑定提交为空（对所有操作者一致）
         if (!create && syncDepts && requestedDeptIds != null && requestedDeptIds.isEmpty()
                 && !currentDeptIds.isEmpty()) {
-            throw new BusinessException(403, "部门绑定不能为空");
+            throw new BusinessException(AuthErrorCode.FORBIDDEN.getCode(), "部门绑定不能为空");
         }
         boolean deptsChanged = !create && requestedDeptIds != null
                 && !sameIdSet(currentDeptIds, requestedDeptIds);
@@ -164,12 +165,12 @@ public class SysUserService extends BaseService<SysUserMapper, SysUser>{
                 : (create ? null : existing.getDeptId());
         if (!create && (deptIdChanged || deptsChanged) && effectiveDeptId != null
                 && !effectiveDeptIds.contains(effectiveDeptId)) {
-            throw new BusinessException(403, "归属部门须包含在部门绑定中");
+            throw new BusinessException(AuthErrorCode.FORBIDDEN.getCode(), "归属部门须包含在部门绑定中");
         }
         // INV-3：创建时显式绑定集合非空，必须包含提交的归属部门
         if (create && requestedDeptIds != null && !requestedDeptIds.isEmpty()
                 && user.getDeptId() != null && !requestedDeptIds.contains(user.getDeptId())) {
-            throw new BusinessException(403, "归属部门须包含在部门绑定中");
+            throw new BusinessException(AuthErrorCode.FORBIDDEN.getCode(), "归属部门须包含在部门绑定中");
         }
 
         if (create) {
@@ -222,18 +223,18 @@ public class SysUserService extends BaseService<SysUserMapper, SysUser>{
      */
     public SysUser getScopedUser(Long id) {
         if (sysUserScopeQuery.findVisibleUser(id) == null) {
-            throw new BusinessException(403, "用户不存在或无权操作");
+            throw new BusinessException(AuthErrorCode.FORBIDDEN.getCode(), "用户不存在或无权操作");
         }
         SysUser user = getUser(id, null, null);
         Set<Long> roleIds = new HashSet<>(listRoleIds(id));
         if (!roleIds.isEmpty()
                 && (user.getRoleList() == null || user.getRoleList().size() != roleIds.size())) {
-            throw new BusinessException(403, "用户角色关系不完整，拒绝操作");
+            throw new BusinessException(AuthErrorCode.FORBIDDEN.getCode(), "用户角色关系不完整，拒绝操作");
         }
         Set<Long> deptIds = new HashSet<>(listDeptIds(id));
         if (!deptIds.isEmpty()
                 && (user.getDeptList() == null || user.getDeptList().size() != deptIds.size())) {
-            throw new BusinessException(403, "用户部门关系不完整，拒绝操作");
+            throw new BusinessException(AuthErrorCode.FORBIDDEN.getCode(), "用户部门关系不完整，拒绝操作");
         }
         return user;
     }
