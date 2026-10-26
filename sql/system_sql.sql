@@ -128,7 +128,7 @@ CREATE TABLE `sys_menu` (
 DROP TABLE IF EXISTS `sys_role`;
 CREATE TABLE `sys_role` (
                             `id` bigint NOT NULL COMMENT '角色ID',
-                            `tenant_id` bigint DEFAULT NULL COMMENT '租户ID',
+                            `tenant_id` bigint NOT NULL DEFAULT 0 COMMENT '租户ID（0=单租户/未启用租户隔离；启用商业版多租户后写入真实租户ID）',
                             `role_key` varchar(50) NOT NULL COMMENT '角色权限字符',
                             `role_name` varchar(50) NOT NULL COMMENT '角色名称',
                             `is_open` tinyint(1) DEFAULT '1' COMMENT '菜单树是否展开（0折叠 1展开 ）',
@@ -138,7 +138,13 @@ CREATE TABLE `sys_role` (
                             `create_time` datetime DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
                             `update_by` bigint DEFAULT NULL COMMENT '更新者ID',
                             `update_time` datetime DEFAULT CURRENT_TIMESTAMP COMMENT '更新时间',
-                            PRIMARY KEY (`id`) USING BTREE
+                            PRIMARY KEY (`id`) USING BTREE,
+                            -- role_key 是授权判定依据（selectOne(eq("role_key", ...))），重名会让角色创建链直接报错。
+                            -- 应用层查重是「先查后插」，并发下两个请求可同时通过，故唯一性由数据库兜底。
+                            -- 唯一维度必须带 tenant_id：不带则商业版多租户下两个租户无法各自拥有 common/super_admin。
+                            -- tenant_id 因此必须 NOT NULL DEFAULT 0 —— 可空列在 MySQL 唯一索引里不受约束（NULL 行想几条有几条）。
+                            -- 已有库升级：先 SELECT tenant_id, role_key, COUNT(*) ... HAVING COUNT(*)>1 清干净，再 ALTER，否则加索引直接失败。
+                            UNIQUE KEY `uk_sys_role_tenant_role_key` (`tenant_id`, `role_key`) USING BTREE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 ROW_FORMAT=DYNAMIC COMMENT='角色信息表';
 
 -- ----------------------------

@@ -186,11 +186,11 @@ INSERT INTO `sys_menu` (`id`, `parent_id`, `name`, `sort`, `url`, `path`, `type`
 -- 超级管理员角色（ID=1 与 BaseConstant.ROLE_ID_SUPER_ADMIN_LONG 一致）
 -- ----------------------------
 INSERT INTO `sys_role` (`id`, `tenant_id`, `role_key`, `role_name`, `is_open`, `data_scope`, `remark`) VALUES
-(1, NULL, 'super_admin', '超级管理员', 1, 1, '超级管理员，拥有所有权限');
+(1, 0, 'super_admin', '超级管理员', 1, 1, '超级管理员，拥有所有权限');
 
 -- 普通角色
 INSERT INTO `sys_role` (`id`, `tenant_id`, `role_key`, `role_name`, `is_open`, `data_scope`, `remark`) VALUES
-(2, NULL, 'common', '普通用户', 1, 4, '普通用户，仅本人数据');
+(2, 0, 'common', '普通用户', 1, 4, '普通用户，仅本人数据');
 
 -- ----------------------------
 -- 超级管理员用户（此行为占位密码 "admin"，启动时由 DataInitializer 替换为

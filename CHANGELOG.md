@@ -92,6 +92,7 @@
 - 部门备注「一编辑就丢」（开源前复审批）：`SysDeptMapper.xml` 的两条查询 SELECT 都没有 `remark` 列 ⇒ 前端编辑弹窗回填时 `remark` 恒为空，提交即把已有备注覆盖掉。两条 SELECT 补 `remark`
 - 用户分页出参回到实体（开源前复审批）：`/sys/user/page` 走 `SysUserMapper.xml` 的 `select u.*`，出参是 `SysUser` 实体 ⇒ `tenantId` / `updatePwdTime` / `isBusinessUser` 等内部字段随响应外发（`password` / `salt` 已有 `WRITE_ONLY` 挡住）。改用 `SysUserVO`，与服务层此前声明的「列表出参用 VO」口径对齐
 - 字典 `is_type` 拆箱 NPE（开源前复审批）：DDL 里该列可空，而 3 处判断写成 `sysDict.getIsType() == 1`（Integer 自动拆箱），历史数据行为 NULL 时字典树/列表直接 500。收敛为 `SysDict.isDictType(dict)` 空值安全判断
+- 字典项列表把 `is_type IS NULL` 的行整条滤掉：`sys_dict.is_type` 的 DDL 允许 NULL，而 SQL 的 `is_type <> 1` 对 NULL **不成立**（NULL 参与比较的结果是 UNKNOWN，不是 TRUE）⇒ 存量空值行在字典管理页里完全看不见——看不见就改不了，只能去库里手工处理；而同一套代码的 `SysDict.isDictType` 又把 NULL 当作「不是字典类型」照常处理，两处口径打架。过滤条件改为 `(is_type <> 1 OR is_type IS NULL)`；配套 `SysDictIsTypeNullSafetyTest`（4 例，含「过滤条件退回 `<> 1` 就变红」的反证）
 - 分页工具拆箱：`PageUtil.getPageMp(pageReq)` 直取 `getPageNo()/getPageSize()`，缺参即 NPE；改为复用 `PageReq#getPage()` 的兜底逻辑
 - BPMN 流式部署绕过 XXE 预校验：`FlowService.deploy(..., InputStream)` 只校验了资源文件名，XML 内容直接交给引擎；字符串重载才做安全 DOM 解析。流式重载改为读满后走同一套 `validateBpmnXml`
 - 死代码：`SysRoleService.existsRoleCode` 无任何调用方（重名校验走 `checkRoleNameAndKey`，且有 `SysRoleCreateDuplicateCheckTest` 覆盖），删除

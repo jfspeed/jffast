@@ -60,16 +60,31 @@ public class SysDictService extends BaseService<SysDictMapper, SysDict>{
      * 字典项列*
      */
     public PageRes<SysDict> page(SysDictQueryRequest sysDictQuery) {
+        LambdaQueryWrapper<SysDict> queryWrapper = buildDictItemQuery(sysDictQuery);
+        queryWrapper.orderByAsc(SysDict::getParentId,SysDict::getSort);
+        Page<SysDict> page = this.page(sysDictQuery.getPage(), queryWrapper);
+        return PageUtil.resultPageMp(page);
+    }
 
+    /**
+     * 字典项列表的查询条件（字典类型 = {@code is_type} 1，字典项 = 其它）。
+     *
+     * <p>{@code is_type} 列 DDL 允许 NULL（{@code DEFAULT NULL}），而 SQL 里 {@code is_type <> 1}
+     * 对 NULL 行**不成立**（NULL 参与比较的结果是 UNKNOWN，不是 TRUE）⇒ 存量空值行会被整条
+     * 过滤掉：它们在字典管理页里<b>完全看不见</b>——看不见就改不了，只能去库里手工处理，
+     * 而代码另一处（{@link SysDict#isDictType}）又把 NULL 当作「不是字典类型」照常处理，
+     * 两处口径不一致。
+     *
+     * <p>所以这里显式把 NULL 行纳入字典项，与 {@link SysDict#isDictType} 的判定保持一致：
+     * NULL 既不是字典类型，就按字典项对待。
+     */
+    static LambdaQueryWrapper<SysDict> buildDictItemQuery(SysDictQueryRequest sysDictQuery) {
         LambdaQueryWrapper<SysDict> queryWrapper = new LambdaQueryWrapper<>();
         queryWrapper.like(StrUtil.isNotBlank(sysDictQuery.getName()),SysDict::getName, sysDictQuery.getName());
         queryWrapper.like(StrUtil.isNotBlank(sysDictQuery.getCode()),SysDict::getCode, sysDictQuery.getCode());
         queryWrapper.eq(sysDictQuery.getParentId()!=null,SysDict::getParentId, sysDictQuery.getParentId());
-        queryWrapper.ne(SysDict::getIsType, 1);
-
-        queryWrapper.orderByAsc(SysDict::getParentId,SysDict::getSort);
-        Page<SysDict> page = this.page(sysDictQuery.getPage(), queryWrapper);
-        return PageUtil.resultPageMp(page);
+        queryWrapper.and(w -> w.ne(SysDict::getIsType, 1).or().isNull(SysDict::getIsType));
+        return queryWrapper;
     }
 
     private List<SysDict> list(String dictName, String dictCode){
