@@ -24,6 +24,7 @@ import cn.jfspeed.job.handler.DisallowConcurrentQuartzJob;
 import cn.jfspeed.job.manager.QuartzManager;
 import cn.jfspeed.job.scanner.JobAnnotationScanner;
 import cn.jfspeed.job.store.JobStore;
+import cn.jfspeed.job.util.JobInvokeUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.quartz.Job;
 import org.quartz.JobKey;
@@ -63,6 +64,16 @@ import java.util.concurrent.TimeUnit;
 public class JobScheduler implements CommandLineRunner, DisposableBean {
 
     public static final String DEFAULT_GROUP = "DEFAULT";
+
+    /**
+     * 触发器归属戳的 {@code JobDataMap} 键：这个 trigger 是**哪个服务**建的。
+     *
+     * <p>为什么需要它：Quartz 的 {@code SCHED_NAME}（{@code QRTZ_*.SCHED_NAME}）是行分区键，
+     * 两个应用共用同一个库**且**用同一个 {@code instanceName} 时会被并进同一个集群，
+     * 彼此的 trigger 在同一张表里。此时"这条 trigger 是谁的"不能靠命名空间推断，
+     * 只能靠建它时写下的戳。
+     */
+    static final String OWNER_KEY = "ownerServiceName";
 
     private final JobProperties properties;
     private final JobStore jobStore;
@@ -224,8 +235,15 @@ public class JobScheduler implements CommandLineRunner, DisposableBean {
                 //    结果 paused 的任务照样被排进 Quartz（表现：启动日志"新建/改动 2 条"而两条都是暂停的）。
                 if (!canRunHere(row) || !row.isEnabled()) {
                     if (quartzManager.checkExists(row.getJobName(), row.getJobGroup())) {
-                        quartzManager.deleteJob(row.getJobName(), row.getJobGroup());
-                        removed++;
+                        if (ownedByOtherService(row.getJobName(), row.getJobGroup())) {
+                            // 归属戳表明这条 trigger 是别的服务建的：共享同一套 QRTZ_ 表时，
+                            // 删掉它就是打断兄弟服务（对方页面里任务还在、却不再执行）。
+                            log.debug("【定时任务】触发器 {}.{} 属于其它服务，本服务不删除",
+                                    row.getJobGroup(), row.getJobName());
+                        } else {
+                            quartzManager.deleteJob(row.getJobName(), row.getJobGroup());
+                            removed++;
+                        }
                     }
                     if (!row.isEnabled()) {
                         disabled++;
@@ -239,6 +257,7 @@ public class JobScheduler implements CommandLineRunner, DisposableBean {
                     continue;
                 }
                 running++;
+                claimIfRunnableAndUnowned(row);
                 desired.add(JobKey.jobKey(row.getJobName(), row.getJobGroup()));
                 String currentCron = quartzManager.getCronExpression(row.getJobName(), row.getJobGroup());
                 // 首轮（进程刚启动）**强制重建**：misfire 策略、执行类这些"只在创建时生效"的东西
@@ -310,6 +329,12 @@ public class JobScheduler implements CommandLineRunner, DisposableBean {
                     log.debug("【定时任务】触发器 {}.{} 仍被任务表引用，不由本服务清理", key.getGroup(), key.getName());
                     continue;
                 }
+                if (ownedByOtherService(key.getName(), key.getGroup())) {
+                    // 归属戳表明是别的服务建的：任务表里这一行已经被删掉了，但触发器归对方管，
+                    // 共享 QRTZ_ 表时替它清理 = 打断兄弟服务。留给对方自己的对账处理。
+                    log.debug("【定时任务】触发器 {}.{} 属于其它服务，本服务不清理", key.getGroup(), key.getName());
+                    continue;
+                }
                 quartzManager.deleteJob(key.getName(), key.getGroup());
                 cleaned++;
                 log.warn("【定时任务】清理孤儿触发器（任务表已无对应行）: {}.{}",
@@ -319,6 +344,45 @@ public class JobScheduler implements CommandLineRunner, DisposableBean {
             log.error("【定时任务】清理孤儿触发器失败（下次同步会重试）", e);
         }
         return cleaned;
+    }
+
+    /**
+     * 无归属任务（{@code service_name} 为空）由**跑得动它的那个服务**认领。
+     *
+     * <p>为什么必须认领：{@code service_name} 为空的行按 {@code canRunHere} 的口径归
+     * 「默认调度者」（{@code jffast.job.scheduler.default-scope=true} 的那个服务）。
+     * 而这个开关是**每个应用各自配**的 —— 两个服务都配了 true 时，同一条无归属任务
+     * 会被两边同时排期：内存调度器下变成**同一个任务被执行两次**，
+     * 共享 QRTZ_ 表时变成两个 trigger 互删（谁也跑不稳）。
+     *
+     * <p>认领后 {@code service_name} 落库，归属变成**记录下来的事实**而不是运行时开关，
+     * 别的服务就不会再认领它（{@code claim} 自带 {@code AND service_name IS NULL}，并发下也只有一个赢家）。
+     *
+     * <p>⚠️ <b>只认领自己跑得动的任务</b>（调用目标的 Bean 在本进程的 classpath 里）：
+     * 认领一个跑不动的任务，会把真正跑得动的那个服务挡在门外 ⇒ 任务永远没人执行
+     * （这正是 cloud 的 system 服务去执行 demo 任务、结果 "NoSuchBeanDefinitionException" 的那类问题）。
+     *
+     * <p>注解登记路径（{@link #registerAnnotatedJobs}）已经对"本服务有 Bean"的行做过同样的认领，
+     * 这里补的是**没有任何服务有 Bean** 的那部分：谁都不认领 ⇒ 保持无归属，
+     * 由默认调度者按原口径执行（老行为不变，不会凭空多出"没人跑"的洞）。
+     */
+    private void claimIfRunnableAndUnowned(JobRecord row) {
+        if (row.getId() == null || StrUtil.isNotBlank(row.getServiceName())) {
+            return;
+        }
+        if (!properties.getScheduler().isDefaultScope()) {
+            return;
+        }
+        if (!JobInvokeUtil.isBeanPresent(row.getInvokeTarget())) {
+            // 本服务跑不动它（Bean 不在本进程 classpath）⇒ 不认领，留给跑得动的那个服务
+            return;
+        }
+        try {
+            jobStore.claim(row.getId(), appName);
+            log.info("【定时任务】默认调度者认领无归属任务: {} → 归属 {}", row.getJobName(), appName);
+        } catch (Exception e) {
+            log.warn("【定时任务】认领无归属任务失败（不影响本轮调度）: {}", row.getJobName(), e);
+        }
     }
 
     /**
@@ -403,7 +467,32 @@ public class JobScheduler implements CommandLineRunner, DisposableBean {
         params.put("invokeTarget", row.getInvokeTarget());
         params.put("misfirePolicy", row.getMisfirePolicy());
         params.put("concurrent", row.getConcurrent());
+        // 归属戳：标记这个 trigger 是本服务建的。
+        // 共享同一套 QRTZ_ 表时（两个应用连同一个库且 instanceName 相同），删除动作落在共享表上，
+        // 没有这个戳就无法判断"这条 trigger 是不是我的" ⇒ 会把兄弟服务刚排好的 trigger 删掉。
+        params.put(OWNER_KEY, appName);
         return params;
+    }
+
+    /**
+     * 这个触发器是不是**别的服务**建的？
+     *
+     * <p>读的是建 trigger 时写下的归属戳（{@link #OWNER_KEY}）。
+     * <ul>
+     *   <li>戳写着别的服务 ⇒ **不是我的**，删除动作不能碰它（共享 QRTZ_ 表时碰了就是打断对方）；</li>
+     *   <li>戳是自己 / 没有戳 ⇒ 视为自己的（没有戳的是升级前建的老 trigger，行为与从前一致）。</li>
+     * </ul>
+     * 读失败时按"自己的"处理并告警：读取失败属于 Quartz 侧异常，此时整条调度链大概率已经不正常，
+     * 保持旧行为比改变删除语义更可控。
+     */
+    private boolean ownedByOtherService(String jobName, String jobGroup) {
+        try {
+            Object owner = quartzManager.getJobDataValue(jobName, jobGroup, OWNER_KEY);
+            return owner != null && !appName.equals(owner.toString());
+        } catch (Exception e) {
+            log.warn("【定时任务】读取触发器归属失败（按本服务处理）: {}.{}", jobGroup, jobName, e);
+            return false;
+        }
     }
 
     /**
