@@ -41,15 +41,21 @@ RSAUtil.generateKey();  // 返回 [publicKey, privateKey]
 
 ### 2. 初始化数据库
 
+**导入哪些文件、按什么顺序**，以仓根 [README.md「快速开始 → 2. 初始化数据库」](../README.md#2-初始化数据库)
+的 SOURCE 列表为唯一权威（14 条，按行序即序号 1–14，`--` 注释掉的可选行同样占序号）；
+本指南不复制一份（两处清单必然漂移）。
+本机 MySQL 的命令形态：
+
 ```bash
-mysql -h 127.0.0.1 -uroot -ptest1234 jffast < sql/system_sql.sql
-mysql -h 127.0.0.1 -uroot -ptest1234 jffast < sql/system_init_data.sql
-# 必须导入，且要在首次启动前（引擎启动即初始化；同实例别的库带 ACT_* 时它不会自建表，
-# 缺表即以 Table 'xxx.act_ge_property' doesn't exist 启动失败）：
-mysql -h 127.0.0.1 -uroot -ptest1234 jffast < sql/flowable_schema/flowable_mysql_all.sql
-# 工作流业务表（用到工作流时再导入）：
-# mysql -h 127.0.0.1 -uroot -ptest1234 jffast < sql/flow_sql.sql
+mysql -h 127.0.0.1 -uroot -ptest1234 jffast < sql/<清单里的文件>.sql
 ```
+
+部署侧另有两条必须知道的事实：
+
+- `flowable_schema/flowable_mysql_all.sql` **必须导入，且要在首次启动前**：引擎启动即初始化，
+  而同实例别的库带 `ACT_*` 时它不会自建表，缺表即以 `Table 'xxx.act_ge_property' doesn't exist` 启动失败。
+- 清单里带菜单种子的脚本（`sys_post.sql` / `sys_task.sql` / `sys_file.sql` / `sys_notification_template.sql`）
+  不能省：前三者的前端菜单在各自脚本里播种（不在 `system_init_data.sql`），缺表会在点开菜单时报 `Unknown table`。
 
 ### 3. 准备镜像
 
@@ -73,15 +79,15 @@ cd jffast
 docker compose up -d   # 启动 mysql + redis
 ```
 
-导入 SQL：
+导入 SQL（清单与顺序同上：以仓根 README「快速开始 → 2. 初始化数据库」为唯一权威，此处不复制）。
+容器内 MySQL 用管道逐条导入，命令形态：
 
 ```bash
-docker exec -i jffast-mysql mysql -uroot -ptest1234 jffast < sql/system_sql.sql
-docker exec -i jffast-mysql mysql -uroot -ptest1234 jffast < sql/system_init_data.sql
-# flowable_mysql_all.sql 必须导入（首次启动前；引擎启动即初始化，同实例别的库带 ACT_* 时不会自建表）
-docker exec -i jffast-mysql mysql -uroot -ptest1234 jffast < sql/flowable_schema/flowable_mysql_all.sql
-# flow_sql.sql 用到工作流时再导入
+docker exec -i jffast-mysql mysql -uroot -ptest1234 jffast < sql/<清单里的文件>.sql
 ```
+
+> ⚠️ 别在 `docker exec -it` 进容器后用 `SOURCE sql/xxx.sql`：文件在宿主机，容器里没有，
+> 会静默失败。用上面的管道形式（与 `SOURCE` 等价，且无需 `docker cp`）。
 
 启动 jffast-boot：
 
@@ -129,14 +135,24 @@ cp deploy/.env.example deploy/.env     # 填 RSA 密钥对与 JFFAST_INIT_PASSWO
 docker compose -f deploy/docker-compose.yml --env-file deploy/.env up -d --build
 ```
 
-首次启动按 `01/02` 顺序自动播种系统表（只播 `system_sql.sql` + `system_init_data.sql`；
-需要工作流 / 定时任务时，在 compose 的 `volumes` 里补挂对应 SQL 行，见文件内注释）。
+首次启动按 `deploy/docker-compose.yml` 的 `01`–`08` 自动播种。那份挂载序是仓根 README
+「快速开始 → 2. 初始化数据库」SOURCE 列表（14 条，按行序即序号 1–14）的**前缀子序列**
+——编号 = 那份清单的行序序号，含 Flowable 引擎表与工作流业务表（README 把
+`flowable_schema/flowable_mysql_all.sql` 列为必须项，所以默认挂载，不再作为可选注释）。
+可选脚本（社交绑定 / 示例模块 / AI 知识库）按需补挂：编号 09–14 = 清单行序里 `08` 之后的六条，
+其中 `09` 对应 README 里那条注释形态的可选行（`social_bind.sql`），该编号段已在编排文件注释里预留。
 启动后访问：http://localhost:7200/jffast-api/swagger-ui.html
 
 > ⚠ **首启后必须核对播种真的跑完了。** MySQL 官方镜像的 initdb 是「任一脚本报错即中止」，
 > 而 `restart: unless-stopped` 会在容器退出后**立刻把它拉起** —— 第二次启动因数据目录已非空，
 > **跳过全部播种**。结果：`docker ps` 显示 healthy、healthcheck 也通过，但表/菜单缺失
-> （接口 500、登录后没有菜单）。核一眼就够：
+> （接口 500、登录后没有菜单）。
+>
+> **预期规模**：默认 `01`–`08` 播种完是 **80 张表 / 107 条菜单 / 39 张 `ACT_*`**；
+> 再补挂 `09`–`14` 并在空卷上重播则是 **89 / 142 / 39**。数字对不上，基本就是某个脚本报错
+> 让整条链被跳过（`docker logs` 里能看到第一个 `ERROR`）。
+>
+> 核一眼就够：
 >
 > ```bash
 > docker exec jffast-mysql mysql -uroot -p"$MYSQL_ROOT_PASSWORD" \
@@ -171,6 +187,10 @@ docker compose down -v   # -v 删除数据卷；不删卷则下次启动不会�
 > `name:`（`jffast-backend` / `jffast-ui`）。
 > 把本编排复制到自己的项目时**必须换成自己的唯一名字**；改名后旧的 `deploy_*` 卷不会被自动接管
 > （看着像数据没了），按 compose 文件头的一次性命令搬卷，或删旧卷让它重新播种。
+
+> **容器名不受 `-p` 影响。** 三个服务显式声明了 `container_name`（默认 `jffast-mysql` /
+> `jffast-redis` / `jffast-backend`）。同一台宿主机已有同名容器时，只换 `-p <项目名>` 照样
+> `Conflict`；在 `.env` 里设 `CONTAINER_NAME_PREFIX=<唯一前缀>-`（如 `acme-`）即可整套改名并存。
 
 > **prod 的必填项**：`MYSQL_HOST` / `MYSQL_USER` / `MYSQL_PASSWORD` / `REDIS_HOST` /
 > `RSA_PRIVATE_KEY` / `RSA_PUBLIC_KEY` / `JFFAST_INIT_PASSWORD`。

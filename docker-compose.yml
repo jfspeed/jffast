@@ -14,10 +14,8 @@ version: '3.8'
 #           （复制即产生第二事实源，此前就漏过 sys_post / sys_task / sys_file 三份）。
 #           其中 flowable_schema/flowable_mysql_all.sql **必须导入**（工作流引擎启动需要
 #           act_ge_property 等表，缺失会直接启动失败），不是「用到工作流才导入」。
-#           示例：
-#           mysql -h 127.0.0.1 -uroot -ptest1234 jffast < sql/system_sql.sql
-#           mysql -h 127.0.0.1 -uroot -ptest1234 jffast < sql/flowable_schema/flowable_mysql_all.sql
-#           mysql -h 127.0.0.1 -uroot -ptest1234 jffast < sql/system_init_data.sql
+#           命令形态：
+#           mysql -h 127.0.0.1 -uroot -ptest1234 jffast < sql/<清单里的文件>.sql
 #   4. 启动后端：cd jffast-boot && mvn spring-boot:run
 #   5. 启动前端（另 clone jffast-ui 到同级目录）：cd ../jffast-ui && npm run dev
 

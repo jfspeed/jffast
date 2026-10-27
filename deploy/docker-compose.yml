@@ -26,12 +26,17 @@
 #   旧卷不会被自动接管，看起来像"数据丢了"。要么迁移一次：
 #     docker run --rm -v deploy_mysql-data:/from -v jffast-backend_mysql-data:/to alpine cp -a /from/. /to/
 #   要么确认旧库无需保留后 `docker volume rm deploy_mysql-data`，下次 up 自动重新播种。
+#
+# ⚠ 容器名走 `${CONTAINER_NAME_PREFIX:-jffast-}`：默认仍是 jffast-mysql / jffast-redis /
+#   jffast-backend（旧名不变）。同一宿主机要再跑一套同名栈时，给第二套一个唯一前缀
+#   （如 CONTAINER_NAME_PREFIX=acme-）即可并存——`-p <项目名>` 只改项目名（卷名/网络名），
+#   改不了这里显式声明的 container_name，只换项目名照样会 Conflict。
 name: jffast-backend
 
 services:
   mysql:
     image: mysql:8.0
-    container_name: jffast-mysql
+    container_name: ${CONTAINER_NAME_PREFIX:-jffast-}mysql
     restart: unless-stopped
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_PASSWORD:-test1234}
@@ -46,19 +51,39 @@ services:
       - "127.0.0.1:${MYSQL_HOST_PORT:-3306}:3306"
     volumes:
       - mysql-data:/var/lib/mysql
-      # 只播种系统表，不挂整个 sql/ 目录：
-      #   sql/ 下还有 flowable_schema/、quartz.sql、demo_*.sql 等，整目录挂进去会被
-      #   initdb 全量执行（且按文件名排序，不等于依赖顺序）。这里用文件级挂载 +
-      #   01/02 前缀显式定序。需要工作流/定时任务时，按需再加一行：
-      #     - ../sql/flowable_schema/flowable_mysql_all.sql:/docker-entrypoint-initdb.d/03-flowable.sql:ro
-      #     - ../sql/flow_sql.sql:/docker-entrypoint-initdb.d/04-flow.sql:ro
-      #   ⚠ flowable 那行并非总是可以不挂：本容器卷为空时引擎会自建 ACT_*，确实可以不挂；
-      #     但若该 MySQL **实例上已有别的库带 ACT_***（引擎判断「schema 已存在」时忽略当前库），
-      #     它会走 upgrade 分支而本库没表 → 启动报 Table 'act_ge_property' doesn't exist，
-      #     此时必须显式挂上 flowable 行。
-      # 注意：initdb 只在数据卷为空时执行，改 SQL 后需 `docker compose down -v` 才会重跑。
+      # ⚠ 播种顺序的唯一权威 = 仓根 README.md「快速开始 → 2. 初始化数据库」的 SOURCE 列表
+      #   （14 条，按行序即序号 1–14，`--` 注释掉的可选行同样占序号）；
+      #   下面 01–08 是那份清单的**前缀子序列**（相对顺序一致，编号 = 那份清单的行序序号）。
+      #   改那边的清单要同时改这里；在这里另立一份顺序 = 第二事实源。
+      #
+      # 只挂「必须导入」的文件，不挂整个 sql/ 目录：
+      #   sql/ 下还有 quartz.sql 与 social_bind / demo_* / ai_knowledge 等可选脚本，整目录挂进去
+      #   会被 initdb 全量执行（且按文件名排序，不等于依赖顺序）。这里用文件级挂载 + 数字前缀显式定序。
+      #   可选脚本按需再加（编号 09–14 = 那份清单行序里 01–08 之后的六条；09 对应 README 里以注释形态出现的
+      #   可选行 social_bind.sql。别与上面抢号）：
+      #     - ../sql/social_bind.sql:/docker-entrypoint-initdb.d/09-social_bind.sql:ro
+      #     - ../sql/demo_example.sql:/docker-entrypoint-initdb.d/10-demo_example.sql:ro
+      #     - ../sql/demo_leave_application.sql:/docker-entrypoint-initdb.d/11-demo_leave_application.sql:ro
+      #     - ../sql/demo_tenant_example.sql:/docker-entrypoint-initdb.d/12-demo_tenant_example.sql:ro
+      #     - ../sql/demo_init_data.sql:/docker-entrypoint-initdb.d/13-demo_init_data.sql:ro
+      #     - ../sql/ai_knowledge.sql:/docker-entrypoint-initdb.d/14-ai_knowledge.sql:ro
+      #   ⚠ 02-flowable 从「可选注释」升为默认挂载，是因为 README 把它列为**必须导入**：本容器卷为空时
+      #     引擎会自建 ACT_*，看似可以不挂；但该 MySQL **实例上已有别的库带 ACT_*** 时（引擎判断
+      #     「schema 已存在」时忽略当前库）会走 upgrade 分支、本库没表 → 启动即报
+      #     Table 'xxx.act_ge_property' doesn't exist。不挂的收益只是少一个文件，风险是整栈起不来。
+      #     本文件为逐条 create table（非幂等），只在空卷首启跑一次，不会与自建表冲突。
+      #   ⚠ 这几张表在前端有对应菜单（岗位/异步任务/文件/通知模板），缺表会在点开菜单时
+      #     报 Unknown table —— 与「可选」无关，是**默认要导**的。
+      # 注意：initdb 只在数据卷为空时执行，改 SQL / 改本清单后需 `docker compose down -v` 才会重跑；
+      #   已有卷升级时不会自动补种（首启后请按 deploy/README.md 的「首启后必须核对播种真的跑完了」验一次）。
       - ../sql/system_sql.sql:/docker-entrypoint-initdb.d/01-system_sql.sql:ro
-      - ../sql/system_init_data.sql:/docker-entrypoint-initdb.d/02-system_init_data.sql:ro
+      - ../sql/flowable_schema/flowable_mysql_all.sql:/docker-entrypoint-initdb.d/02-flowable_mysql_all.sql:ro
+      - ../sql/system_init_data.sql:/docker-entrypoint-initdb.d/03-system_init_data.sql:ro
+      - ../sql/sys_post.sql:/docker-entrypoint-initdb.d/04-sys_post.sql:ro
+      - ../sql/sys_task.sql:/docker-entrypoint-initdb.d/05-sys_task.sql:ro
+      - ../sql/sys_file.sql:/docker-entrypoint-initdb.d/06-sys_file.sql:ro
+      - ../sql/sys_notification_template.sql:/docker-entrypoint-initdb.d/07-sys_notification_template.sql:ro
+      - ../sql/flow_sql.sql:/docker-entrypoint-initdb.d/08-flow_sql.sql:ro
     healthcheck:
       # 不用 mysqladmin ping：它认证失败（口令错）也返回 0，形同虚设；
       # 用真认证查询，口令错即 unhealthy
@@ -72,7 +97,7 @@ services:
 
   redis:
     image: redis:7-alpine
-    container_name: jffast-redis
+    container_name: ${CONTAINER_NAME_PREFIX:-jffast-}redis
     restart: unless-stopped
     # 与 MySQL 同口径：口令以**容器内变量**的形式再给一份，健康检查里用 `$$` 引用它，
     # 避免口令被 compose 插值进健康检查命令行（进程列表 / 容器配置里明文可见）
@@ -97,7 +122,7 @@ services:
     build:
       context: ..
       dockerfile: jffast-boot/Dockerfile
-    container_name: jffast-backend
+    container_name: ${CONTAINER_NAME_PREFIX:-jffast-}backend
     restart: unless-stopped
     environment:
       # 必填（fail-fast）：容器启动即校验数据源，缺失直接退出 —— 数据源只存在于

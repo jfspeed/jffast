@@ -215,8 +215,10 @@ be_host_port="$(get_kv BACKEND_HOST_PORT)"; [ -n "$be_host_port" ] || be_host_po
 my_host_port="$(get_kv MYSQL_HOST_PORT)"; [ -n "$my_host_port" ] || my_host_port=3306
 rd_host_port="$(get_kv REDIS_HOST_PORT)"; [ -n "$rd_host_port" ] || rd_host_port=6379
 db_name="$(get_kv MYSQL_DB)"
-mysql_cn="$(awk '/container_name:/{v=$2; sub(/\r$/,"",v); print v; exit}' "$compose_file")"
-[ -n "$mysql_cn" ] || mysql_cn="jffast-mysql"
+# 容器名在 compose 里写成 ${CONTAINER_NAME_PREFIX:-jffast-}<svc>；从 YAML 直接抠字面量只会拿到
+# 未展开的 ${...} 表达式，所以这里按同一规则用 .env 的前缀算（缺省 jffast- ⇒ 旧名不变）
+cn_prefix="$(get_kv CONTAINER_NAME_PREFIX)"; [ -n "$cn_prefix" ] || cn_prefix="jffast-"
+mysql_cn="${cn_prefix}mysql"
 project="$(awk '$1=="name:"{v=$2; sub(/\r$/,"",v); print v; exit}' "$compose_file")"
 [ -n "$project" ] || project="$(basename "$(dirname "$compose_file")")"
 
