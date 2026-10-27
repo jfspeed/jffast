@@ -166,6 +166,30 @@ class JobSchedulerSyncRebuildTest {
     }
 
     @Test
+    @DisplayName("任务表读不到（null）时跳过整轮对账，绝不清理触发器")
+    void storeReadFailureSkipsReconciliation() throws Exception {
+        // 读失败的约定信号是 null（不是空表）：空表会被反向对账当成"任务全被删了"
+        when(jobStore.listAll()).thenReturn(null);
+
+        JobScheduler scheduler = newScheduler();
+        scheduler.sync();
+
+        verify(quartzManager, never()).listJobKeys();
+        verify(quartzManager, never()).deleteJob(anyString(), anyString());
+        verify(quartzManager, never()).createJob(anyString(), anyString(), anyString(), any(), any(), anyString());
+
+        // 读失败不能算"已对过账"：恢复后第一轮仍要强制重建（misfire 策略/执行类只在创建时生效）
+        when(jobStore.listAll()).thenReturn(List.of(row));
+        when(quartzManager.getJobDataValue(JOB_NAME, JOB_GROUP, "invokeTarget"))
+                .thenReturn(row.getInvokeTarget());
+        when(quartzManager.getMisfirePolicy(JOB_NAME, JOB_GROUP)).thenReturn("3");
+
+        scheduler.sync();
+
+        verify(quartzManager).createJob(eq(JOB_NAME), eq(JOB_GROUP), eq(CRON), any(), any(), eq("3"));
+    }
+
+    @Test
     @DisplayName("未启用调度时不碰 Quartz")
     void disabledSchedulerDoesNothing() throws Exception {
         properties.getScheduler().setEnabled(false);

@@ -38,6 +38,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -48,7 +49,8 @@ import java.util.concurrent.TimeUnit;
  * <p>三件事：
  * <ol>
  *   <li><b>登记</b>：启动时把本服务 `@JfFastJob` 声明的方法登记进 `sys_job`（注解为主，代码即任务定义），
- *       `service_name` 自动 = 本服务名；老数据（`service_name` 为空）由"代码里真有这个 Bean"的服务**认领**；</li>
+ *       `service_name` 自动 = 本服务名；老数据（`service_name` 为空）由"代码里真有这个 Bean"的服务**认领**；
+ *       登记失败会在每轮周期同步时**重试**（幂等），不会因为启动那一刻数据库没就绪就永远登记不上；</li>
  *   <li><b>调度</b>：只调度 <b>归属本服务</b> 的任务（见 {@link #canRunHere}），
  *       彻底解决"共享一张 `sys_job` 表 → 每个服务都跑一遍"的重复执行问题；</li>
  *   <li><b>同步</b>：每 {@code jffast.job.scheduler.refresh-interval-seconds} 秒对一次数据库，
@@ -83,6 +85,12 @@ public class JobScheduler implements CommandLineRunner, DisposableBean {
     private final String appName;
 
     private volatile ScheduledExecutorService refresher;
+
+    /**
+     * 已经提示过"带参任务未登记"的调用目标。
+     * <p>周期同步每轮都会走到带参任务分支，不去重就会把同一条提示刷成日志瀑布。
+     */
+    private final Set<String> pendingParamTargets = ConcurrentHashMap.newKeySet();
 
     /** 本进程是否已完成首轮对账（首轮会**强制重建**触发器，把 misfire 策略/执行类应用到历史数据） */
     private volatile boolean firstSyncDone;
@@ -128,6 +136,11 @@ public class JobScheduler implements CommandLineRunner, DisposableBean {
      * <p>规则：① 已登记过（按 `invoke_target` 查）且已有归属 ⇒ **不动**（管理员改过的 cron/启停永远优先）；
      * ② 已登记但归属为空 ⇒ **认领**为本服务（老数据平滑迁移）；③ 没登记过 ⇒ 插入，`status` 取注解
      * `enabled`（默认 false=暂停），`cron` 取注解 `cron`（可为空 = 未排期）。
+     *
+     * <p><b>幂等</b>：可反复调用（每轮周期同步都会调一次）——已登记的任务按 `invoke_target` 匹配后跳过，
+     * 不会重复插入。之所以要反复调用：启动那一刻数据库可能还没就绪 / 任务表还没建，
+     * 只在启动时登记一次的话，失败后**整个进程生命周期都不会再登记**，
+     * 表现为「代码里明明有 {@code @JfFastJob}，任务页里却一直没有这个任务，重启才好」。
      */
     public void registerAnnotatedJobs() {
         List<JobTargetInfo> targets = scanner.getJobTargets();
@@ -136,8 +149,15 @@ public class JobScheduler implements CommandLineRunner, DisposableBean {
         }
         // 一次读出全表，在内存里做匹配（表通常只有几十行），避免 N 次查询
         List<JobRecord> existingRows = jobStore.listAll();
+        if (existingRows == null) {
+            // 读不到（抖动冷却 / 缺表）⇒ 本轮跳过：否则会把"已登记过的任务"当没登记过再插一遍，
+            // 且无法区分"真没登记"与"读失败"，下一轮恢复后再登记即可。
+            log.warn("【定时任务】任务表暂时读不到，本轮跳过注解登记（服务={}）", appName);
+            return;
+        }
         int inserted = 0;
         int claimed = 0;
+        int failed = 0;
         for (JobTargetInfo target : targets) {
             try {
                 boolean hasParams = target.getParamNames() != null && !target.getParamNames().isEmpty();
@@ -146,8 +166,11 @@ public class JobScheduler implements CommandLineRunner, DisposableBean {
                     if (hasParams) {
                         // 带参任务的调用目标是 `bean.method({param})`，`{param}` 只是**占位符**（由前端弹窗替换为用户输入），
                         // 直接入库不可执行 ⇒ 只提示，等管理员在页面上配好具体参数再建。
-                        log.info("【定时任务】带参任务 {}（{}）未登记：请在「系统管理 → 定时任务」里配置参数后新增",
-                                target.getName(), target.getInvokeTarget());
+                        // 周期同步每轮都会走到这里，故同一目标只提示一次，避免刷屏。
+                        if (pendingParamTargets.add(target.getInvokeTarget())) {
+                            log.info("【定时任务】带参任务 {}（{}）未登记：请在「系统管理 → 定时任务」里配置参数后新增",
+                                    target.getName(), target.getInvokeTarget());
+                        }
                         continue;
                     }
                     JobRecord record = new JobRecord();
@@ -160,12 +183,20 @@ public class JobScheduler implements CommandLineRunner, DisposableBean {
                     record.setStatus(target.isEnabled() ? 1 : 0);
                     record.setServiceName(appName);
                     record.setRemark("由 @JfFastJob 自动登记（" + appName + "）");
-                    jobStore.insert(record);
-                    inserted++;
-                    log.info("【定时任务】登记新任务: {} → {}（归属={}，初始状态={}，cron={}）",
-                            target.getName(), target.getInvokeTarget(), appName,
-                            target.isEnabled() ? "启用" : "暂停",
-                            StrUtil.isBlank(target.getCron()) ? "未排期" : target.getCron());
+                    // 只有**真的插进去了**才计数、才打「登记新任务」：
+                    // 存储不可用 / 并发撞键 / 写入失败时 insert 返回 false，
+                    // 那时任务表里并没有这一行，打「已登记」就是自欺。
+                    if (jobStore.insert(record)) {
+                        inserted++;
+                        log.info("【定时任务】登记新任务: {} → {}（归属={}，初始状态={}，cron={}）",
+                                target.getName(), target.getInvokeTarget(), appName,
+                                target.isEnabled() ? "启用" : "暂停",
+                                StrUtil.isBlank(target.getCron()) ? "未排期" : target.getCron());
+                    } else {
+                        failed++;
+                        log.warn("【定时任务】登记新任务失败（存储不可用 / 已存在 / 写入失败），下轮同步会重试: {} → {}",
+                                target.getName(), target.getInvokeTarget());
+                    }
                 } else if (StrUtil.isBlank(existing.getServiceName())) {
                     if (jobStore.claim(existing.getId(), appName)) {
                         claimed++;
@@ -182,8 +213,9 @@ public class JobScheduler implements CommandLineRunner, DisposableBean {
                 log.error("【定时任务】登记任务失败: {}", target.getInvokeTarget(), e);
             }
         }
-        if (inserted > 0 || claimed > 0) {
-            log.info("【定时任务】注解登记完成：新增 {} 条、认领 {} 条（服务={}）", inserted, claimed, appName);
+        if (inserted > 0 || claimed > 0 || failed > 0) {
+            log.info("【定时任务】注解登记完成：新增 {} 条、认领 {} 条、失败 {} 条（服务={}）",
+                    inserted, claimed, failed, appName);
         }
     }
 
@@ -223,6 +255,14 @@ public class JobScheduler implements CommandLineRunner, DisposableBean {
             return;
         }
         List<JobRecord> rows = jobStore.listAll();
+        if (rows == null) {
+            // 读失败 ⇒ 本轮**啥都不做**。尤其不能拿"空表"继续往下跑反向对账：
+            // 对账会把「任务表里查不到的行」当已删除并清掉触发器，于是一次数据库抖动
+            // 就把本进程所有触发器清空，任务停摆到下一次读成功（刷新间隔 30s 内可能已错过多次触发）。
+            // 已排期的触发器不受影响，继续按原计划执行。
+            log.warn("【定时任务】任务表暂时读不到，本轮跳过同步（已排期的触发器保持原计划执行，服务={}）", appName);
+            return;
+        }
         int scheduled = 0;
         int notMine = 0;
         int noCron = 0;
@@ -566,6 +606,11 @@ public class JobScheduler implements CommandLineRunner, DisposableBean {
         });
         refresher.scheduleWithFixedDelay(() -> {
             try {
+                // 登记也要重试：启动那一刻数据库可能还没就绪（表未建 / 连接未通），
+                // 只在启动时登记一次的话，那一次失败后**整个进程生命周期都不会再登记**，
+                // 表现为「代码里明明有 @JfFastJob，任务页里却一直没有这个任务，重启才好」。
+                // registerAnnotatedJobs 幂等（按 invoke_target 匹配，已登记的跳过）。
+                registerAnnotatedJobs();
                 sync();
             } catch (Exception e) {
                 log.error("【定时任务】周期同步异常", e);

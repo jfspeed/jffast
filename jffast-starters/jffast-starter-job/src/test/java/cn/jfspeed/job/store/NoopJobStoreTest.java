@@ -48,7 +48,7 @@ class NoopJobStoreTest {
     @Test
     @DisplayName("写入类方法为 no-op，可安全调用")
     void writesAreNoop() {
-        store.insert(new JobRecord());
+        assertFalse(store.insert(new JobRecord()));
         store.insertLog(new cn.jfspeed.job.domain.JobLogRecord());
     }
 

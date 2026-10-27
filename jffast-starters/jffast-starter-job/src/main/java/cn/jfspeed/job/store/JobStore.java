@@ -34,14 +34,29 @@ public interface JobStore {
     /** 存储是否可用（无 DataSource、或表/列缺失时为 false —— 此时定时任务静默降级，不影响服务启动） */
     boolean isAvailable();
 
-    /** 全部任务（`sys_job` 全表；调度与归属判定都在内存里做，表通常只有几十行） */
+    /**
+     * 全部任务（`sys_job` 全表；调度与归属判定都在内存里做，表通常只有几十行）。
+     *
+     * <p><b>读不到时返回 {@code null}</b>（存储不可用 / 瞬时故障进冷却 / 缺表），
+     * 与"表里确实没有任务"的**空列表**严格区分：对账逻辑会按"表里没有"清理触发器，
+     * 若把读取失败也报成空表，一次数据库抖动就会清空本进程的全部触发器。
+     */
     List<JobRecord> listAll();
 
     /** 按调用目标查任务（用于注解登记：判断"这个 Bean 方法是否已登记过"） */
     JobRecord findByInvokeTarget(String invokeTarget);
 
-    /** 插入一行任务（id 由实现生成；`create_time` 等交给数据库默认值） */
-    void insert(JobRecord record);
+    /**
+     * 插入一行任务（id 由实现生成；`create_time` 等交给数据库默认值）。
+     *
+     * <p><b>为什么必须返回结果</b>：插入可能**没有真的发生**——存储不可用（冷却期/缺表）、
+     * 并发登记撞唯一键、写入异常。三种情况在调用方看来都是"调用了 insert"，若不回传结果，
+     * 登记日志会一律打印「登记新任务」，而任务表里其实**没有这一行**：页面看不到任务、
+     * 日志却显示已登记，属于典型的自欺故障。
+     *
+     * @return true = 真的插入了这一行；false = 没有插入（已存在 / 存储不可用 / 写入失败）
+     */
+    boolean insert(JobRecord record);
 
     /**
      * 认领：把 `service_name` 为空的任务归属到指定服务。

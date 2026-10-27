@@ -27,7 +27,6 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.SQLSyntaxErrorException;
-import java.util.Collections;
 import java.util.List;
 
 /**
@@ -88,15 +87,16 @@ public class JdbcJobStore implements JobStore {
     @Override
     public List<JobRecord> listAll() {
         if (!isAvailable()) {
-            // ⚠️ 返回空表不等于"任务都被删了"：JobScheduler.sync() 只在**遍历到某行**时才动触发器，
-            //    所以这里返回空 ⇒ 本进程已排期的任务保持原计划继续跑（不会因数据库抖动被误删）。
-            return Collections.emptyList();
+            // ⚠️ 读不到时必须返回 null 而不是空表：JobScheduler.sync() 的反向对账会把「表里没有的行」
+            //    当成已删除并清理触发器，空表 = "任务全被删了" ⇒ 一次抖动就清空本进程的调度。
+            //    null 表示"我不知道表里有什么"，调用方据此跳过本轮对账；空列表只表示"表确实为空"。
+            return null;
         }
         try {
             return jdbcTemplate.query("SELECT " + COLS + " FROM sys_job", this::mapRow);
         } catch (DataAccessException e) {
             degrade(e);
-            return Collections.emptyList();
+            return null;
         }
     }
 
@@ -116,9 +116,9 @@ public class JdbcJobStore implements JobStore {
     }
 
     @Override
-    public void insert(JobRecord record) {
+    public boolean insert(JobRecord record) {
         if (!isAvailable()) {
-            return;
+            return false;
         }
         try {
             jdbcTemplate.update("INSERT INTO sys_job (id, job_name, job_group, invoke_target, cron_expression, "
@@ -133,11 +133,14 @@ public class JdbcJobStore implements JobStore {
                     record.getStatus() == null ? 0 : record.getStatus(),
                     record.getServiceName(),
                     record.getRemark());
+            return true;
         } catch (DuplicateKeyException e) {
             // 多副本同时启动时可能同时登记同一条任务并撞唯一键 —— 这是**并发正常现象**，不是故障
             log.debug("【定时任务】任务已存在（并发登记），跳过插入: {}", record.getInvokeTarget());
+            return false;
         } catch (DataAccessException e) {
             degrade(e);
+            return false;
         }
     }
 

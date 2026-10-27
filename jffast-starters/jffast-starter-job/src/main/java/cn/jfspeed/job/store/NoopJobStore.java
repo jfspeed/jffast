@@ -40,6 +40,7 @@ public class NoopJobStore implements JobStore {
         return false;
     }
 
+    /** 无存储 ⇒ 恒为空表（{@link #isAvailable()} 恒 false，调用方不会拿它做对账） */
     @Override
     public List<JobRecord> listAll() {
         return Collections.emptyList();
@@ -51,8 +52,9 @@ public class NoopJobStore implements JobStore {
     }
 
     @Override
-    public void insert(JobRecord record) {
-        // no-op
+    public boolean insert(JobRecord record) {
+        // no-op：无存储可写 ⇒ 没有插入
+        return false;
     }
 
     @Override
