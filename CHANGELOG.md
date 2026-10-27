@@ -38,6 +38,18 @@
 
 ### 修复
 
+- 异步任务归属 fail-closed：`SysTaskController` 原用 `null` 同时表示「超管」与「取不到登录用户」，会话读取失败会退化成全量可见/可下载（含手机号、邮箱的导出文件）；现只有超管返回 null，其余取不到用户 ID 一律 401 拒绝（与文件模块同口径）
+- 部门层级与成环：修改部门时补「上级不能是自己的下级」校验，并在父级变更后重算本部门与全部下级的 `level`；新建根部门 `level` 修正为 1（此前父级为 0 时写成 2），`level` 为空时不再在列表排序处 NPE
+- 工作流角色审批人：`JfFastAssigneeResolver` 支持文档约定的角色 key（如 `manager`，先解析为角色 ID），并把 `role_id` 的 LIKE 匹配改为 `FIND_IN_SET` 精确匹配（LIKE 的 `1` 会命中 `11`/`21`，审批人范围被放大）；角色不存在时跳过并告警，不再静默配置出 0 个审批人
+- 用户导出条件与列表一致：导出补 `roleId` / `deptId` 过滤（此前导出结果大于用户筛选所见）
+- 通知模板表改为必导：基础种子已含模板菜单与按钮权限，但 `sys_notification_template.sql` 原标「可选」⇒ 跳过导入进入模板页直接 `Unknown table`；README 引导链已改为必须导入
+- 通知外部通道异步投递：邮件/短信原在事务提交后同步串行发送（每人一次 HTTP，短信超时 10s），广播 N 人会阻塞请求线程 N×超时；改为提交后异步执行
+- 本地文件重名覆盖：文件名由「秒级时间戳 + 原名」改为附带 8 位随机串，同一秒上传同名文件不再互相覆盖
+- 定时任务日志越界：按不存在的 `jobId` 查询执行日志时返回空页，不再因缺少过滤条件返回全部任务日志
+- 文件上传幂等：`@Idempotent` 键改用「文件名 + 大小」标识 `MultipartFile`（原 `toString()` 是对象身份哈希，每次请求都不同 ⇒ 导入接口防重失效）
+- 删除死配置：`mybatis-plus.type-aliases-package` 指向不存在的包且全部 Mapper XML 已用全限定类名，移除该键
+- 文档口径：`开发规范.md` 的异步任务产物目录改为「存储根之外」（与代码「根内即启动失败」一致）
+
 - **提权：`LoginUtil.isSuperAdmin()` 用错常量**——判定超管的依据取自 `BaseConstant.SUPER_ADMIN`（值 `"admin"`），但那是**超管用户名**不是 roleKey；超管的 roleKey 是 `BaseConstant.ROLE_SUPER_ADMIN`（`"super_admin"`），而 `BaseConstant.ROLE_ADMIN`（`"admin"`）是**部门级管理员**的 roleKey（数据范围=本部门）。⇒ 任何被授予部门级管理员角色的普通用户都被判成超管，5 个消费点全部越权：请假申请列表 / 归属校验 / 删除（`LeaveApplicationService`）、任务当前操作人（`SysTaskController`）、角色操作者上下文（`SysRoleService`）、用户导入上下文（`SysUserImportContextFactory`）。改为按 roleKey 判定，并抽出包内纯函数 `isSuperAdminByRole(List<String>, List<Long>)`；新增 `LoginUtilSuperAdminTest`（6 例，钉住"部门管理员不是超管"）
 - **Redis 多态反序列化从"全放行"收紧为白名单**：原 `JfFastRedisAutoConfiguration` 用 `activateDefaultTyping(..., ALLOW_ALL_SUB_TYPES)` —— 任何能写入 Redis 的一方都能让服务端实例化任意类。改为 `RedisPolymorphicTypeValidator`：白名单 = `cn.jfspeed.*` + `java.lang` 包装类型 + `java.util` 容器；白名单外抛 `InvalidTypeIdException`（**失败关闭**）。保留 `DefaultTyping.NON_FINAL`（`List<SysDict>` 这类集合需要类型信息才能读回）；配套 `RedisPolymorphicTypeValidatorTest`（6 例）
 - **定时任务改了触发器不生效**：`JobScheduler.sync()` 的重建条件只比较 cron / Job 类 / firstSync，而 `invokeTarget`（反射目标，含"立即执行"）与 `misfirePolicy`（失火策略）存在 JobDataMap 里、**不参与比较**；`QuartzManager.ensureJobExists` 对已存在的任务直接 return ⇒ JobDataMap 从不刷新。结果：改了调用目标或失火策略后，跑的仍是旧目标（旧策略）。现 sync 比较条件补 `targetChanged` / `misfireChanged`（空值归一为 `"3"`），`ensureJobExists` 在任务已存在时回写 JobDataMap（用 `scheduler.addJob(existing, true)`，不触碰已有触发器）；配套 `JobSchedulerSyncRebuildTest`（5 例）

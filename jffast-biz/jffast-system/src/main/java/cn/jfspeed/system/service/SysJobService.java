@@ -186,9 +186,11 @@ public class SysJobService extends BaseService<SysJobMapper, SysJob> {
         LambdaQueryWrapper<SysJobLog> queryWrapper = new LambdaQueryWrapper<>();
         if (jobId != null) {
             SysJob job = getById(jobId);
-            if (job != null) {
-                queryWrapper.eq(SysJobLog::getJobName, job.getJobName());
+            if (job == null) {
+                // 任务不存在时不能落成"无过滤条件"，否则会把全部任务的执行日志返回给前端
+                return PageUtil.resultPageMp(new com.baomidou.mybatisplus.extension.plugins.pagination.Page<>(pageNo, pageSize));
             }
+            queryWrapper.eq(SysJobLog::getJobName, job.getJobName());
         }
         queryWrapper.orderByDesc(SysJobLog::getCreateTime);
         return PageUtil.resultPageMp(sysJobLogService.page(

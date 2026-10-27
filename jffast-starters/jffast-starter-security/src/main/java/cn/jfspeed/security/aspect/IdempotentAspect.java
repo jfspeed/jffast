@@ -16,6 +16,7 @@
 package cn.jfspeed.security.aspect;
 
 import cn.jfspeed.common.core.enums.FrameworkErrorCode;
+import java.io.InputStream;
 import java.lang.reflect.Method;
 
 import org.aspectj.lang.ProceedingJoinPoint;
@@ -23,6 +24,7 @@ import org.aspectj.lang.annotation.Around;
 import org.aspectj.lang.annotation.Aspect;
 import org.aspectj.lang.reflect.MethodSignature;
 import org.springframework.stereotype.Component;
+import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
 
@@ -100,12 +102,26 @@ public class IdempotentAspect {
             StringBuilder params = new StringBuilder();
             for (Object arg : args) {
                 if (arg != null) {
-                    params.append(arg.toString());
+                    params.append(fingerprint(arg));
                 }
             }
             sb.append(":").append(SecureUtil.md5(params.toString()));
         }
 
         return sb.toString();
+    }
+
+    /**
+     * MultipartFile 的 toString 是对象身份哈希（每次请求都不同），直接拼进去会让
+     * 文件上传接口的幂等键恒不相等、防重形同虚设。改为文件名 + 大小；流无法复读，按类型占位。
+     */
+    private String fingerprint(Object arg) {
+        if (arg instanceof MultipartFile file) {
+            return "file:" + file.getOriginalFilename() + ":" + file.getSize();
+        }
+        if (arg instanceof InputStream) {
+            return "stream";
+        }
+        return arg.toString();
     }
 }

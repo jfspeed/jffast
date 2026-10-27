@@ -25,6 +25,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
 
 import org.springframework.beans.factory.ObjectProvider;
@@ -88,6 +89,15 @@ public class SysNotificationService extends BaseService<SysNotificationMapper, S
      */
     @Resource
     private NotificationChannelDispatcher notificationChannelDispatcher;
+
+    /**
+     * 外部通道（邮件/短信）是逐人网络 IO，不能借用请求线程串行发送。
+     * 用公共异步池执行：本类在多个部署形态下都装配，直接依赖某个 TaskExecutor bean
+     * 会让缺少该 bean 的形态启动失败。
+     */
+    private void runAsync(Runnable task) {
+        CompletableFuture.runAsync(task);
+    }
 
     @Resource
     private SysUserMapper sysUserMapper;
@@ -273,11 +283,11 @@ public class SysNotificationService extends BaseService<SysNotificationMapper, S
             TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
                 @Override
                 public void afterCommit() {
-                    dispatch.run();
+                    runAsync(dispatch);
                 }
             });
         } else {
-            dispatch.run();
+            runAsync(dispatch);
         }
     }
 

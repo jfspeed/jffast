@@ -17,6 +17,8 @@ package cn.jfspeed.system.service;
 
 import cn.hutool.core.util.StrUtil;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import cn.jfspeed.common.core.base.BaseConstant;
+import cn.jfspeed.common.core.exception.BusinessException;
 import cn.jfspeed.security.annotation.DataPermission;
 import cn.jfspeed.common.data.base.BaseService;
 import cn.jfspeed.system.entity.SysDept;
@@ -26,6 +28,7 @@ import cn.jfspeed.system.mapper.SysDeptMapper;
 import cn.jfspeed.system.mapper.SysRoleDeptMapper;
 import cn.jfspeed.system.mapper.SysUserMapper;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import jakarta.annotation.Resource;
 import java.util.*;
@@ -58,7 +61,7 @@ public class SysDeptService extends BaseService<SysDeptMapper, SysDept>{
                 appendAncestors(dept, allDepts, existingIds, result);
             }
             result.sort((a, b) -> {
-                int levelCompare = a.getLevel().compareTo(b.getLevel());
+                int levelCompare = Integer.compare(levelOf(a), levelOf(b));
                 if (levelCompare != 0) return levelCompare;
                 return a.getCreateTime().compareTo(b.getCreateTime());
             });
@@ -100,6 +103,108 @@ public class SysDeptService extends BaseService<SysDeptMapper, SysDept>{
         return idList;
     }
 
+
+    /**
+     * 新增部门：根节点 level=1，其余为父级 level+1。
+     */
+    public void createDept(SysDept dept) {
+        Long parentId = dept.getParentId() == null ? BaseConstant.PARENT_ID : dept.getParentId();
+        dept.setParentId(parentId);
+        if (BaseConstant.PARENT_ID.equals(parentId)) {
+            dept.setLevel(1);
+            return;
+        }
+        SysDept parent = getById(parentId);
+        if (parent == null) {
+            throw new BusinessException("父级部门不存在：" + parentId);
+        }
+        dept.setLevel(levelOf(parent) + 1);
+    }
+
+    /**
+     * 修改部门：拒绝成环（不能把自己或自己的下级设为上级），并在父级变更时
+     * 重算本部门与全部下级的 level。
+     *
+     * <p>只校验「上级不能是自己」不够：A→B、B→A 这类环会让部门树静默变空，
+     * 「本部门及以下」的数据范围也随 level 错乱。level 只用于排序与展示，
+     * 但错误会一路传给新建子部门。
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public void updateDept(SysDept dept) {
+        SysDept existing = getById(dept.getId());
+        if (existing == null) {
+            throw new BusinessException("部门不存在");
+        }
+        Long parentId = dept.getParentId() == null ? existing.getParentId() : dept.getParentId();
+        Long normalized = parentId == null ? BaseConstant.PARENT_ID : parentId;
+        if (Objects.equals(normalized, dept.getId())) {
+            throw new BusinessException("修改失败，上级不能是自己");
+        }
+        if (!BaseConstant.PARENT_ID.equals(normalized) && isSelfOrDescendant(normalized, dept.getId())) {
+            throw new BusinessException("修改失败，上级不能是自己的下级");
+        }
+        int level = 1;
+        if (!BaseConstant.PARENT_ID.equals(normalized)) {
+            SysDept parent = getById(normalized);
+            if (parent == null) {
+                throw new BusinessException("父级部门不存在：" + normalized);
+            }
+            level = levelOf(parent) + 1;
+        }
+        dept.setParentId(normalized);
+        dept.setLevel(level);
+        updateById(dept);
+        if (!Objects.equals(existing.getParentId(), normalized) || levelOf(existing) != level) {
+            recalculateDescendantLevels(dept.getId(), level);
+        }
+    }
+
+    /** 从 candidateId 向上找，命中 deptId 说明 candidateId 是 deptId 的下级（或自身）。 */
+    private boolean isSelfOrDescendant(Long candidateId, Long deptId) {
+        Long cursor = candidateId;
+        Set<Long> seen = new HashSet<>();
+        while (cursor != null && !BaseConstant.PARENT_ID.equals(cursor) && seen.add(cursor)) {
+            if (Objects.equals(cursor, deptId)) {
+                return true;
+            }
+            SysDept current = getById(cursor);
+            cursor = current == null ? null : current.getParentId();
+        }
+        return false;
+    }
+
+    /** 按新的父级 level 逐层重算全部下级，visited 防环。 */
+    private void recalculateDescendantLevels(Long rootId, int rootLevel) {
+        List<SysDept> all = baseMapper.selectList(new QueryWrapper<SysDept>().select("id", "parent_id", "level"));
+        Map<Long, List<SysDept>> children = all.stream()
+                .filter(item -> item.getParentId() != null)
+                .collect(Collectors.groupingBy(SysDept::getParentId));
+        Set<Long> visited = new HashSet<>();
+        Deque<Map.Entry<SysDept, Integer>> queue = new ArrayDeque<>();
+        for (SysDept child : children.getOrDefault(rootId, Collections.emptyList())) {
+            queue.add(new AbstractMap.SimpleEntry<>(child, rootLevel + 1));
+        }
+        while (!queue.isEmpty()) {
+            Map.Entry<SysDept, Integer> entry = queue.poll();
+            SysDept current = entry.getKey();
+            if (!visited.add(current.getId())) {
+                continue;
+            }
+            if (levelOf(current) != entry.getValue()) {
+                SysDept patch = new SysDept();
+                patch.setId(current.getId());
+                patch.setLevel(entry.getValue());
+                updateById(patch);
+            }
+            for (SysDept child : children.getOrDefault(current.getId(), Collections.emptyList())) {
+                queue.add(new AbstractMap.SimpleEntry<>(child, entry.getValue() + 1));
+            }
+        }
+    }
+
+    private int levelOf(SysDept dept) {
+        return dept.getLevel() == null ? 1 : dept.getLevel();
+    }
 
     /**
      * 根据parentId得到所有子节点的id和name，以逗号分隔

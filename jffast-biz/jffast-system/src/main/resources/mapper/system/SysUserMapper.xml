@@ -83,8 +83,14 @@
             GROUP_CONCAT(distinct d.dept_name separator ',') as dept_name
         from sys_user u
             left join sys_user_role sur on u.id = sur.user_id
+            <if test="params.roleId != null and params.roleId != '' ">
+                AND sur.role_id = #{params.roleId}
+            </if>
             left join sys_role r on sur.role_id = r.id
             left join sys_user_dept sud on u.id = sud.user_id
+            <if test="params.deptId != null and params.deptId != '' ">
+                AND sud.dept_id = #{params.deptId}
+            </if>
             left join sys_dept d on sud.dept_id = d.id
         <where>
             <if test="params.id != null">

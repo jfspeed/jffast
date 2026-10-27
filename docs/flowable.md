@@ -79,7 +79,7 @@ public class JfFastAssigneeResolver implements AssigneeResolver {
 | 类型 | value 格式 | 解析结果 |
 |------|-----------|---------|
 | `user` | 用户ID列表，逗号分隔（如 `1,2,3`） | 直接作为办理人/候选人 |
-| `role` | 角色 key（如 `manager`） | 查询该角色下所有用户 |
+| `role` | 角色 key（如 `manager`），也兼容角色 ID | 查询该角色下所有用户 |
 | `dept` | 部门ID列表，逗号分隔（如 `100,200`） | 查询部门下所有用户 |
 | `initiator` | 忽略 | 解析为流程发起人（从流程变量 `initiatorUserId` 取） |
 

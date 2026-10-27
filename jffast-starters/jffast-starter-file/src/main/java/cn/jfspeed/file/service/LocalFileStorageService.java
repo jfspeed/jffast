@@ -16,6 +16,7 @@
 package cn.jfspeed.file.service;
 
 import cn.hutool.core.date.LocalDateTimeUtil;
+import cn.hutool.core.util.IdUtil;
 import cn.hutool.core.util.StrUtil;
 import cn.jfspeed.common.core.exception.BusinessException;
 import cn.jfspeed.file.config.FileStorageProperties;
@@ -116,7 +117,8 @@ public class LocalFileStorageService implements FileStorageService {
             sb.append(dirPath).append(SEPARATOR);
         }
         String todayStr = LocalDateTimeUtil.format(LocalDateTime.now(), "yyyyMMdd-HHmmss");
-        sb.append(todayStr).append(SEPARATOR);
+        // 秒级时间戳不足以防重名：同一秒内上传同名文件会直接覆盖。
+        sb.append(todayStr).append('-').append(IdUtil.fastSimpleUUID(), 0, 8).append(SEPARATOR);
         sb.append(sanitizeFilename(filename));
         return sb.toString();
     }

@@ -282,7 +282,8 @@ sa-token:
 
 mybatis-plus:
   mapper-locations: classpath:mapper/**/*.xml
-  type-aliases-package: cn.jfspeed.common.base
+  # 不配置 type-aliases-package：全部 Mapper XML 均使用全限定类名（resultType/parameterType），
+  # 指向不存在的包只会成为一条永不生效的死配置。
   global-config:
     db-config:
       id-type: auto

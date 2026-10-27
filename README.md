@@ -278,6 +278,10 @@ SOURCE sql/sys_task.sql;
 --    使用文件管理功能时必须导入）
 SOURCE sql/sys_file.sql;
 
+-- 导入通知模板表（「通知管理→模板」页面依赖；菜单与按钮权限在 system_init_data.sql 中
+--    已存在，缺这两张表会在打开模板页时报 Unknown table；脚本幂等可重复执行）
+SOURCE sql/sys_notification_template.sql;
+
 -- 导入工作流业务表（流程分类/流程定义业务扩展等，使用「工作流」功能时必须导入）
 SOURCE sql/flow_sql.sql;
 
@@ -297,9 +301,6 @@ SOURCE sql/demo_tenant_example.sql;
 --    导入后到「系统管理 → 定时任务」点启用即可。不导入则前端没有「示例模块」目录）
 SOURCE sql/demo_init_data.sql;
 
--- （可选）消息模板分组表
-SOURCE sql/sys_notification_template.sql;
-
 -- （可选）AI 知识库模块表（AI 中心：知识库/文档/对话）
 SOURCE sql/ai_knowledge.sql;
 ```
@@ -317,7 +318,7 @@ SOURCE sql/ai_knowledge.sql;
 > - `sys_post.sql`：岗位管理表（`sys_post`）+ 菜单种子（页面 1012 / 按钮 2101-2104）；幂等脚本，新建库与存量库均执行
 > - `sys_task.sql`：异步任务表（`sys_task`，导入/导出任务进度与结果文件）+ 菜单种子（页面 1013 / 按钮 2201-2202）；幂等脚本，新建库与存量库均执行
 > - `sys_file.sql`：文件管理表（`sys_file`）+ 菜单种子（页面 1014 / 按钮 2301-2303）；上传由 `jffast-starter-file` 自动登记（历史文件不回填）；幂等脚本，新建库与存量库均执行
-> - `sys_notification_template.sql`：消息模板分组表
+> - `sys_notification_template.sql`：通知模板与分组表（**必须导入**：基础种子里已有「通知管理→模板」菜单与按钮权限，缺表会在打开模板页时报 `Unknown table`）
 > - `ai_knowledge.sql`：AI 知识库模块表 + 「AI 中心」菜单（使用该功能时需要）；**`ai_knowledge_base` 的建表 DDL 以本文件为唯一事实源**
 
 ### 3. 修改配置

@@ -19,6 +19,7 @@ import cn.dev33.satoken.annotation.SaCheckPermission;
 import cn.hutool.core.util.StrUtil;
 import cn.jfspeed.common.core.base.BaseConstant;
 import cn.jfspeed.common.core.enums.AuthErrorCode;
+import cn.jfspeed.common.core.exception.BusinessException;
 import cn.jfspeed.common.data.base.BaseController;
 import cn.jfspeed.common.security.util.LoginUtil;
 import cn.jfspeed.common.web.domain.dto.R;
@@ -122,17 +123,30 @@ public class SysTaskController extends BaseController<SysTaskService, SysTask> {
         return R.success();
     }
 
-    /** 超管返回 null（全量），普通用户按 create_by 过滤 */
+    /**
+     * 当前请求可见的任务归属：超管返回 null（全量），普通用户返回自己的用户 ID。
+     *
+     * <p>与文件模块同口径：取不到登录用户时必须拒绝，不能退化成 null，否则会话读取失败
+     * 会让一次请求看到/下载到所有人的导出文件（含手机号、邮箱）。
+     */
     private Long currentOwnerId() {
-        return LoginUtil.isSuperAdmin() ? null : LoginUtil.getLoginUserId();
+        if (LoginUtil.isSuperAdmin()) {
+            return null;
+        }
+        Long userId = LoginUtil.getLoginUserId();
+        if (userId == null) {
+            throw new BusinessException(AuthErrorCode.NOT_LOGIN.getCode(), "登录状态已失效，请重新登录");
+        }
+        return userId;
     }
 
     private SysTask getOwnedTask(Long id) {
+        // 先解析归属：取不到登录用户时直接拒绝，连记录都不查
+        Long ownerId = currentOwnerId();
         SysTask task = service.getById(id);
         if (task == null) {
             return null;
         }
-        Long ownerId = currentOwnerId();
         return ownerId == null || ownerId.equals(task.getCreateBy()) ? task : null;
     }
 

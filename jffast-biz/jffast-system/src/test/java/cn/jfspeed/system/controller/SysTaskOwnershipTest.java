@@ -18,6 +18,7 @@ package cn.jfspeed.system.controller;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
@@ -45,6 +46,8 @@ import org.mockito.quality.Strictness;
 import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import cn.jfspeed.common.core.enums.AuthErrorCode;
+import cn.jfspeed.common.core.exception.BusinessException;
 import cn.jfspeed.common.security.domain.dto.LoginUser;
 import cn.jfspeed.common.security.util.LoginUtil;
 import cn.jfspeed.common.web.domain.dto.R;
@@ -108,6 +111,21 @@ class SysTaskOwnershipTest {
         task.setFileName("用户数据.xlsx");
         task.setFilePath(filePath);
         return task;
+    }
+
+    @Test
+    @DisplayName("取不到登录用户时必须拒绝，不能退化成全量可见")
+    void missingLoginUserIdFailsClosed() {
+        login.when(LoginUtil::isSuperAdmin).thenReturn(false);
+        login.when(LoginUtil::getLoginUserId).thenReturn(null);
+
+        SysTaskQueryRequest query = new SysTaskQueryRequest();
+        BusinessException pageError = assertThrows(BusinessException.class, () -> controller.page(query));
+        assertEquals(AuthErrorCode.NOT_LOGIN.getCode(), pageError.getCode());
+
+        BusinessException detailError = assertThrows(BusinessException.class, () -> controller.getById(1L));
+        assertEquals(AuthErrorCode.NOT_LOGIN.getCode(), detailError.getCode());
+        verify(service, never()).getById(1L);
     }
 
     @Test

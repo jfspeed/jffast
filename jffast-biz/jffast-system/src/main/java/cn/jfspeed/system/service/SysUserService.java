@@ -478,6 +478,9 @@ public class SysUserService extends BaseService<SysUserMapper, SysUser>{
         putIfText(params, "realName", map.get("realName"));
         putIfText(params, "phone", map.get("phone"));
         putIfText(params, "state", map.get("state"));
+        // 列表页按角色/部门筛选时，导出必须带同样的条件，否则导出范围大于用户看到的结果
+        putIfText(params, "roleId", map.get("roleId"));
+        putIfText(params, "deptId", map.get("deptId"));
 
         // 创建时间范围：优先取 beginTime/endTime，其次兼容 createTime 数组（范围选择器原值）
         String beginTime = asText(map.get("beginTime"));

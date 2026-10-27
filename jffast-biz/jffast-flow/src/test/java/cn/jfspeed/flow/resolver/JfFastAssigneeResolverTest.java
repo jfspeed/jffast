@@ -21,11 +21,13 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import static org.mockito.Mockito.never;
@@ -39,7 +41,9 @@ import org.mockito.quality.Strictness;
 import com.baomidou.mybatisplus.core.conditions.Wrapper;
 
 import cn.jfspeed.flowable.constant.FlowConstant;
+import cn.jfspeed.system.entity.SysRole;
 import cn.jfspeed.system.entity.SysUser;
+import cn.jfspeed.system.service.SysRoleService;
 import cn.jfspeed.system.service.SysUserService;
 
 /**
@@ -60,8 +64,19 @@ class JfFastAssigneeResolverTest {
     @Mock
     private SysUserService sysUserService;
 
+    @Mock
+    private SysRoleService sysRoleService;
+
     @InjectMocks
     private JfFastAssigneeResolver resolver;
+
+    @BeforeEach
+    void setUp() {
+        SysRole role = new SysRole();
+        role.setId(1L);
+        role.setRoleKey("manager");
+        when(sysRoleService.getOne(any(Wrapper.class), anyBoolean())).thenReturn(role);
+    }
 
     private SysUser buildUser(Long id, String roleId, Long deptId, Integer state) {
         SysUser user = new SysUser();
@@ -107,6 +122,29 @@ class JfFastAssigneeResolverTest {
             assertEquals(3, result.size());
             assertTrue(result.containsAll(Arrays.asList("101", "102", "103")));
             verify(sysUserService, times(2)).list(any(Wrapper.class));
+        }
+
+        @Test
+        @DisplayName("角色 key 先解析为角色 ID；纯数字按 ID 直接使用，不查表")
+        void shouldResolveRoleKeyAndAcceptNumericId() {
+            when(sysUserService.list(any(Wrapper.class))).thenReturn(Collections.emptyList());
+
+            resolver.resolveUserIds(FlowConstant.ASSIGNEE_TYPE_ROLE, "manager");
+            verify(sysRoleService).getOne(any(Wrapper.class), anyBoolean());
+
+            resolver.resolveUserIds(FlowConstant.ASSIGNEE_TYPE_ROLE, "1001");
+            verify(sysRoleService, times(1)).getOne(any(Wrapper.class), anyBoolean());
+        }
+
+        @Test
+        @DisplayName("角色不存在时跳过、不查询用户，避免把流程配成无人可办")
+        void shouldSkipUnknownRole() {
+            when(sysRoleService.getOne(any(Wrapper.class), anyBoolean())).thenReturn(null);
+
+            List<String> result = resolver.resolveUserIds(FlowConstant.ASSIGNEE_TYPE_ROLE, "ghost");
+
+            assertTrue(result.isEmpty());
+            verify(sysUserService, never()).list(any(Wrapper.class));
         }
 
         @Test

@@ -27,7 +27,9 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 
 import cn.jfspeed.flowable.constant.FlowConstant;
 import cn.jfspeed.flowable.resolver.AssigneeResolver;
+import cn.jfspeed.system.entity.SysRole;
 import cn.jfspeed.system.entity.SysUser;
+import cn.jfspeed.system.service.SysRoleService;
 import cn.jfspeed.system.service.SysUserService;
 
 /**
@@ -35,10 +37,12 @@ import cn.jfspeed.system.service.SysUserService;
  * <p>
  * 将 role/dept 类型的审批人配置解析为实际用户 ID 列表：
  * <ul>
- *   <li>{@code role}：value 为角色 ID 列表（逗号分隔）→ 查 sys_user.role_id like roleId 的用户</li>
- *   <li>{@code dept}：value 为部门 ID 列表（逗号分隔）→ 查 sys_user.dept_id in (deptIds) 的用户</li>
+ *   <li>{@code role}：value 为角色 key（如 {@code manager}）或角色 ID（逗号分隔）
+ *       → 先归一为角色 ID，再按 {@code sys_user.role_id} 精确匹配</li>
+ *   <li>{@code dept}：value 为部门 ID 列表（逗号分隔）→ 查 {@code sys_user.dept_id in (deptIds)} 的用户</li>
  * </ul>
- * SysUser 的 roleId 字段为字符串（可能多角色逗号分隔），用 like 匹配。
+ * SysUser 的 roleId 字段为字符串（可能多角色逗号分隔），用 {@code FIND_IN_SET} 精确匹配，
+ * 不能用 LIKE：LIKE 的 1 会命中 11、21，导致审批人范围被放大。
  *
  * @author jffast
  */
@@ -48,9 +52,11 @@ public class JfFastAssigneeResolver implements AssigneeResolver {
     private static final Logger log = LoggerFactory.getLogger(JfFastAssigneeResolver.class);
 
     private final SysUserService sysUserService;
+    private final SysRoleService sysRoleService;
 
-    public JfFastAssigneeResolver(SysUserService sysUserService) {
+    public JfFastAssigneeResolver(SysUserService sysUserService, SysRoleService sysRoleService) {
         this.sysUserService = sysUserService;
+        this.sysRoleService = sysRoleService;
     }
 
     @Override
@@ -61,11 +67,15 @@ public class JfFastAssigneeResolver implements AssigneeResolver {
         }
         List<String> userIds = new ArrayList<>();
         if (FlowConstant.ASSIGNEE_TYPE_ROLE.equals(type)) {
-            // 按角色查用户：sys_user.role_id 字符串字段，用 like 匹配（兼容多角色逗号分隔）
-            // state=1 正常，state=2 停用（见 SysUser/SQL 定义）
-            for (String roleId : values) {
+            // 文档约定写角色 key（manager），历史页面也可能存角色 ID，两种都归一为 ID。
+            for (String roleValue : values) {
+                Long roleId = resolveRoleId(roleValue);
+                if (roleId == null) {
+                    log.warn("审批人角色不存在，已跳过：{}", roleValue);
+                    continue;
+                }
                 List<SysUser> users = sysUserService.list(new LambdaQueryWrapper<SysUser>()
-                        .like(SysUser::getRoleId, roleId)
+                        .apply("FIND_IN_SET({0}, role_id)", roleId)
                         .eq(SysUser::getState, 1));
                 for (SysUser user : users) {
                     String uid = String.valueOf(user.getId());
@@ -97,6 +107,24 @@ public class JfFastAssigneeResolver implements AssigneeResolver {
             }
         }
         return userIds;
+    }
+
+    /**
+     * 角色 key（manager）→ 角色 ID；纯数字按 ID 原样返回（兼容存量配置）。
+     */
+    private Long resolveRoleId(String value) {
+        if (value.chars().allMatch(Character::isDigit)) {
+            try {
+                return Long.parseLong(value);
+            } catch (NumberFormatException e) {
+                log.warn("角色 ID 格式错误：{}", value);
+                return null;
+            }
+        }
+        SysRole role = sysRoleService.getOne(new LambdaQueryWrapper<SysRole>()
+                .eq(SysRole::getRoleKey, value)
+                .last("limit 1"), false);
+        return role == null ? null : role.getId();
     }
 
     private List<String> split(String value) {

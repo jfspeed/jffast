@@ -127,21 +127,7 @@ public class SysDeptController extends BaseController<SysDeptService,SysDept> {
             return R.error("名称已存在");
         }
         dept.setId(IdUtils.snowflakeShort());
-        if (dept.getParentId() == null) {
-            dept.setParentId(BaseConstant.PARENT_ID);
-            dept.setLevel(1);
-        } else{
-            if (BaseConstant.PARENT_ID.equals(dept.getParentId())) {
-                dept.setLevel(2);
-            } else {
-                SysDept parentDept = service.getById(dept.getParentId());
-                if (parentDept == null) {
-                    return R.error("父级部门不存在："+dept.getParentId());
-                }
-                dept.setLevel(parentDept.getLevel()+1);
-            }
-
-        }
+        service.createDept(dept);
         service.save(dept);
         return R.success();
     }
@@ -157,10 +143,10 @@ public class SysDeptController extends BaseController<SysDeptService,SysDept> {
         if (service.checkDeptName(dept)) {
             return R.error("名称已存在");
         }
-        if (dept.getId()!=null && dept.getParentId()!=null && dept.getParentId().equals(dept.getId())){
-            return R.error("修改失败，上级不能是自己");
+        if (dept.getId()==null){
+            return R.error("部门 id 不能为空");
         }
-        service.updateById(dept);
+        service.updateDept(dept);
         return R.success();
     }
 
