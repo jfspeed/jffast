@@ -31,17 +31,20 @@ import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 
-@Tag(name = "社交登录")
+/**
+ * 社交账号绑定端点。
+ *
+ * <p>authorize 是**绑定前**的匿名跳转（跳第三方平台，此时浏览器还没有登录态）；
+ * callback（兑换授权码）与 bind / unbind / binds 是个人维度的绑定管理（需登录态、不设权限码）。
+ * 故整类不加 {@code @SaCheckPermission}（白名单与理由见 jffast-boot 的 EndpointPermissionAnnotationTest）。
+ *
+ * @author jffast
+ */
+@Tag(name = "社交账号绑定")
 @RestController
 @RequestMapping("/social")
 @RequiredArgsConstructor
 @ConditionalOnProperty(name = "jffast.social.enabled", havingValue = "true")
-// 社交登录端点：authorize / callback 是登录前的匿名跳转，bind / unbind / listBinds 是
-// 个人维度的绑定管理（仅需登录态、不设权限码）—— 故整类不加 {@code @SaCheckPermission}
-// （白名单与理由见 jffast-boot 的 EndpointPermissionAnnotationTest）。
-/**
- * @author jffast
- */
 public class SocialLoginController {
 
     private final SocialLoginService socialLoginService;

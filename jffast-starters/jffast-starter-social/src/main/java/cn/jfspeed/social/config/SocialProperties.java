@@ -22,22 +22,27 @@ import java.util.HashMap;
 import java.util.Map;
 
 /**
- * 社交登录 Starter 配置属性
+ * 社交账号绑定 Starter 配置属性
  *
  * <pre>
  * jffast:
  *   social:
- *     enabled: false           # 是否启用社交登录（默认 false）
+ *     enabled: false           # 是否启用社交账号绑定（默认 false）
  *     providers:
  *       github:
  *         client-id: xxx
  *         client-secret: xxx
- *         redirect-uri: http://localhost:7200/social/callback/github
+ *         redirect-uri: http://localhost:7201/social/callback
  *       gitee:
  *         client-id: xxx
  *         client-secret: xxx
- *         redirect-uri: http://localhost:7200/social/callback/gitee
+ *         redirect-uri: http://localhost:7201/social/callback
  * </pre>
+ *
+ * <p>{@code redirect-uri} 是**社交平台回跳到的地址**，通常是前端页面而不是后端接口：
+ * 授权码只能用一次且必须由后端兑换成 access_token，前端页面拿到 code/state 后把它交回
+ * 发起绑定的那个同源窗口，由那个窗口调 {@code GET /social/callback} 完成兑换。
+ * 平台标识（provider）由服务端从**签名 state** 里解码得到，回跳地址不需要带 provider 参数。
  *
  * @author jffast
  */
@@ -45,7 +50,7 @@ import java.util.Map;
 @ConfigurationProperties(prefix = "jffast.social")
 public class SocialProperties {
 
-    /** 是否启用社交登录，默认 false */
+    /** 是否启用社交账号绑定，默认 false */
     private boolean enabled = false;
 
     /**

@@ -24,7 +24,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 
 /**
- * 社交登录回跳地址白名单的回归测试。
+ * 社交账号绑定回跳地址白名单的回归测试。
  *
  * <p>要防的是**开放重定向**：`targetUri` 由客户端传入，服务端只是给它签名。签名防的是"被改"，
  * 防不了"一开始就填了别的地址" —— 攻击者可以让服务端替自己签一个 {@code https://evil.com}，

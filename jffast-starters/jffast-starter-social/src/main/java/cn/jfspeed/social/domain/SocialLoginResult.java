@@ -19,10 +19,18 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 
 /**
+ * 第三方账号授权回调的结果。
+ *
+ * <p>本 Starter 只做**社交账号绑定**：回调拿到第三方用户信息，签发绑定票据；绑定动作本身在
+ * {@code /social/bind}（需登录态）里完成，之后第三方账号与该系统用户建立关联。
+ *
+ * <p>因此这里**不返回系统登录 Token** —— 「凭社交账号直接登录」需要业务方在绑定关系之上
+ * 自行签发会话（本 Starter 不落这一层，避免把第三方身份直接当成系统登录凭证）。
+ *
  * @author jffast
  */
 @Data
-@Schema(title = "社交登录结果")
+@Schema(title = "社交账号授权结果")
 public class SocialLoginResult {
 
     @Schema(title = "社交用户信息（仅用于展示，绑定必须使用 bindTicket）")
@@ -31,13 +39,10 @@ public class SocialLoginResult {
     @Schema(title = "绑定票据：调用 /social/bind 时提交，服务端验签后绑定")
     private String bindTicket;
 
-    @Schema(title = "系统 Token（登录成功时返回")
-    private String token;
-
     @Schema(title = "是否已绑定系统账号")
     private Boolean bound;
 
-    @Schema(title = "绑定的系统用户ID（已绑定时返回")
+    @Schema(title = "绑定的系统用户ID（已绑定时返回）")
     private Long userId;
 
     @Schema(title = "认证成功后前端跳转地址")

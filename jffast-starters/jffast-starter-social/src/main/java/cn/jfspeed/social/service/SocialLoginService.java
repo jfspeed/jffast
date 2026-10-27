@@ -60,7 +60,7 @@ public class SocialLoginService {
         this.socialBindMapper = socialBindMapper;
         providers.forEach(p -> {
             providerMap.put(p.getProviderName(), p);
-            log.info("注册社交登录 Provider: {}", p.getProviderName());
+            log.info("注册社交账号绑定 Provider: {}", p.getProviderName());
         });
     }
 
@@ -115,6 +115,14 @@ public class SocialLoginService {
         if (StrUtil.isBlank(code)) {
             throw new BusinessException(FrameworkErrorCode.PARAM_ERROR.getCode(), "授权码不能为空");
         }
+        // 回调必须发生在登录态下：第三方平台回跳到的是**前端中转页**，真正调本接口的是
+        // 发起绑定的那个已登录窗口。匿名兑换会换出一张与用户无关的绑定票据
+        // （票据里的 userId 为空 ⇒ bind 侧的「票据与当前登录用户不匹配」校验形同虚设），
+        // 还会把已绑定的 userId 回吐给匿名调用方。
+        Long loginUserId = LoginUtil.getLoginUserId();
+        if (loginUserId == null) {
+            throw new BusinessException(AuthErrorCode.NOT_LOGIN.getCode(), "社交账号回调需要登录态");
+        }
         SocialState socialState = SocialState.decode(state, resolveStateSecret());
         SocialLoginProvider loginProvider = getProvider(socialState.getProvider());
 
@@ -131,7 +139,7 @@ public class SocialLoginService {
 
         SocialLoginResult result = new SocialLoginResult();
         result.setSocialUser(socialUser);
-        result.setBindTicket(issueBindTicket(socialUser));
+        result.setBindTicket(issueBindTicket(socialUser, loginUserId));
         // 出参侧再过一次白名单：state 虽由服务端签发，但回显给前端的地址必须始终是站内相对路径
         result.setTargetUri(sanitizeTargetUri(socialState.getTargetUri()));
 
@@ -229,7 +237,7 @@ public class SocialLoginService {
     private SocialLoginProvider getProvider(String provider) {
         SocialLoginProvider loginProvider = providerMap.get(provider.toLowerCase());
         if (loginProvider == null) {
-            throw new BusinessException(FrameworkErrorCode.PARAM_ERROR.getCode(), "不支持的社交登录平台: " + provider + "，已注册: " + providerMap.keySet());
+            throw new BusinessException(FrameworkErrorCode.PARAM_ERROR.getCode(), "不支持的社交账号平台: " + provider + "，已注册: " + providerMap.keySet());
         }
         return loginProvider;
     }
@@ -241,7 +249,13 @@ public class SocialLoginService {
         return provider.trim().toLowerCase();
     }
 
-    private String issueBindTicket(SocialUser socialUser) {
+    /**
+     * 签发一次性绑定票据。
+     *
+     * <p>{@code userId} 固定为**发起回调的那个登录用户**：票据一旦签发就只能绑到这个账号，
+     * {@link #bind(String)} 侧的「票据与当前登录用户不匹配」校验因此是有效的。
+     */
+    private String issueBindTicket(SocialUser socialUser, Long loginUserId) {
         SocialBindTicket ticket = new SocialBindTicket();
         ticket.setProvider(socialUser.getProvider());
         ticket.setOpenId(socialUser.getOpenId());
@@ -249,7 +263,7 @@ public class SocialLoginService {
         ticket.setNickname(socialUser.getNickname());
         ticket.setAvatarUrl(socialUser.getAvatarUrl());
         ticket.setEmail(socialUser.getEmail());
-        ticket.setUserId(LoginUtil.getLoginUserId());
+        ticket.setUserId(loginUserId);
         ticket.setExpiresAt(System.currentTimeMillis() + BIND_TICKET_TTL_MILLIS);
         return ticket.encode(resolveStateSecret());
     }
@@ -266,7 +280,7 @@ public class SocialLoginService {
                 .anyMatch(config -> StrUtil.isNotBlank(config.getClientSecret()));
         if (!hasClientSecret) {
             throw new BusinessException(FrameworkErrorCode.SYSTEM_ERROR.getCode(),
-                    "社交登录未配置签名密钥，请设置 jffast.social.state-secret 或 provider client-secret");
+                    "社交账号绑定未配置签名密钥，请设置 jffast.social.state-secret 或 provider client-secret");
         }
         return socialProperties.getProviders().entrySet().stream()
                 .sorted(Map.Entry.comparingByKey())

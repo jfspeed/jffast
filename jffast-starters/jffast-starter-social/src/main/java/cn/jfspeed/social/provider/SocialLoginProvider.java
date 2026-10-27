@@ -18,7 +18,7 @@ package cn.jfspeed.social.provider;
 import cn.jfspeed.social.domain.SocialUser;
 
 /**
- * 社交登录平台适配（策略模式）。
+ * 社交账号绑定平台适配（策略模式）。
  * <p>
  * 新增平台只需实现本接口并注册为 Bean，{@code SocialLoginService} 会按
  * {@link #getProviderName()} 自动收集。
