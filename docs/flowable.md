@@ -122,7 +122,10 @@ flowable:
 | `ACT_*` / `FLW_*` | `sql/flowable_schema/flowable_mysql_all.sql`（**首次部署必须先导入**） | Flowable 8 引擎核心表（部署/定义/实例/任务/变量/历史等 45 张）。**不要依赖 `database-schema-update` 在空库建表**：Flowable 8.0.0 会把完全空库误判为旧版本、走升级路径而失败（实测 FlowableOptimisticLockingException） |
 | `wf_category` | `sql/flow_sql.sql` | 流程分类表（业务扩展） |
 
-执行顺序：`system_sql.sql` → `system_init_data.sql` → `flowable_schema/flowable_mysql_all.sql` → `flow_sql.sql`
+导入顺序以仓库 README「快速开始 → 2. 初始化数据库」的 SOURCE 列表为唯一权威，本文不复制一份清单（两处清单必然漂移）。与工作流相关的两点：
+
+- `flowable_schema/flowable_mysql_all.sql` 必须在**首次启动前**导入（引擎启动即初始化，同实例别的库带 `ACT_*` 时不会自建表）；
+- `flow_sql.sql`（`wf_category` 等）在引擎表**之后**导入——它往 `sys_menu` 播种「流程分类/流程定义」菜单，所以 `system_sql.sql`、`system_init_data.sql` 也须先于它。
 
 ## API 接口
 

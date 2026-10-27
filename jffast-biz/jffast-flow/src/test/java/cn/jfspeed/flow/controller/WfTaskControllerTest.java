@@ -35,6 +35,7 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 import java.util.List;
 
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -120,6 +121,61 @@ class WfTaskControllerTest {
                     .andExpect(jsonPath("$.code").value(200))
                     .andExpect(jsonPath("$.data.list[0].id").value("t-1"))
                     .andExpect(jsonPath("$.data.list[0].assignee").value("100"));
+        }
+    }
+
+    @Nested
+    @DisplayName("分页参数归一（P3-3）")
+    class PaginationGuard {
+
+        @Test
+        @DisplayName("pageNo=0 不得给 Flowable 传负 offset")
+        void pageNoZeroFallsBackToFirstPage() throws Exception {
+            when(flowService.countTodoTasks("100")).thenReturn(0L);
+            when(flowService.listTodoTasks("100", 0, 10)).thenReturn(List.of());
+
+            mockMvc.perform(get("/flow/task/todo/page").param("pageNo", "0").param("pageSize", "10"))
+                    .andExpect(status().isOk());
+
+            verify(flowService).listTodoTasks(eq("100"), eq(0), eq(10));
+        }
+
+        @Test
+        @DisplayName("负数 pageNo / 非正 pageSize 落默认值")
+        void nonPositiveValuesFallBackToDefaults() throws Exception {
+            when(flowService.countTodoTasks("100")).thenReturn(0L);
+            when(flowService.listTodoTasks("100", 0, 10)).thenReturn(List.of());
+
+            mockMvc.perform(get("/flow/task/todo/page").param("pageNo", "-3").param("pageSize", "0"))
+                    .andExpect(status().isOk());
+
+            verify(flowService).listTodoTasks(eq("100"), eq(0), eq(10));
+        }
+
+        @Test
+        @DisplayName("pageSize 超过上限时收敛到 200")
+        void oversizedPageSizeIsClamped() throws Exception {
+            when(flowService.countCandidateTasks("100")).thenReturn(0L);
+            when(flowService.listCandidateTasks("100", 0, 200)).thenReturn(List.of());
+
+            mockMvc.perform(get("/flow/task/candidate/page").param("pageNo", "1").param("pageSize", "100000"))
+                    .andExpect(status().isOk());
+
+            verify(flowService).listCandidateTasks(eq("100"), eq(0), eq(200));
+        }
+
+        @Test
+        @DisplayName("极大 pageNo 的 offset 不得整型溢出成负数")
+        void hugePageNoDoesNotOverflow() throws Exception {
+            when(flowService.countTodoTasks("100")).thenReturn(0L);
+            when(flowService.listTodoTasks("100", Integer.MAX_VALUE, 200)).thenReturn(List.of());
+
+            mockMvc.perform(get("/flow/task/todo/page")
+                            .param("pageNo", String.valueOf(Integer.MAX_VALUE))
+                            .param("pageSize", "200"))
+                    .andExpect(status().isOk());
+
+            verify(flowService).listTodoTasks(eq("100"), eq(Integer.MAX_VALUE), eq(200));
         }
     }
 

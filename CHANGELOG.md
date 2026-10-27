@@ -38,6 +38,10 @@
 
 ### 修复
 
+- 字典三处作用域缺陷：① **查重不带作用域** ⇒「A 类型下的字典项『启用』」把「B 类型下的同名字典项」也判成重复，两个本该共存的数据互相挡路；现查重按「同父级 + 同类别」范围（`is_type` 口径与 `SysDict#isDictType` 一致，`NULL` 存量行按字典项一并纳入），② **按编码取字典不限定 `is_type`** ⇒ 字典项编码（名称拼音生成）与字典类型编码相撞时 `selectOne` 抛 `TooManyResultsException`，下拉接口直接 500；现限定 `is_type = 1` 且撞码取第一条不抛异常，③ **字典项列表的查询列漏了 `value`** ⇒ 下拉框拿不到选中值。配套 `SysDictScopeAndLookupTest`
+- 通知发送的接收人 fail-closed：`recipientType`（接收人类型）为空时旧实现按「全体用户」处理——参数没填就默认给全站发一条通知；类型拼错时静默解析出 0 人，却照样把通知记成「已发送」，留下一条谁都没收到的记录。现发送前先校验接收人参数（类型必填且限 `all`/`role`/`dept`/`user`，非 `all` 必须给出接收人），并把接收人解析挪到落库**之前**：解析不到人直接拒绝发送，不产生「已发送」记录；配套 `SysNotificationRecipientValidationTest`
+- 社交账号绑定链路：第三方平台按 `redirect-uri` 回跳的地址此前配成**后端接口**（`http://localhost:7200/jffast-api/social/callback`），而该端点返回 JSON，浏览器直接打开只会看到一段 JSON、绑定流程走不通；现改为回跳到**前端中转页** `/social/callback`，由它把 `code` / `state` 用 `postMessage` 交回发起绑定的那个同源窗口，再由该窗口调 `GET /social/callback` 兑换（`targetOrigin` 取自身 origin ⇒ 只有同源窗口能拿到授权码；平台标识由服务端从签名 state 解码，回跳地址不需要带 provider 参数）
+- 定时任务注解登记失败既不重试又误报成功：`JobStore#insert` 原先返回 `void`，存储不可用 / 并发撞唯一键 / 写入失败这三种**根本没插进去**的情况，调度器照样打「登记新任务」并计入"新增 N 条"——日志与事实相反；且登记只在启动时跑一次，那一刻数据库还没就绪（表未建 / 连接未通）就**整个进程生命周期都不会再登记**，表现是「代码里明明有 `@JfFastJob`，任务页里却一直没有这个任务，重启才好」。现 `insert` 返回"是否真的插入这一行"，调度器据此决定计数与日志；登记改为**每轮周期同步都重试**（幂等，按 `invoke_target` 匹配），带参任务的"未登记"提示按调用目标去重，不再每轮刷屏；配套 `JobSchedulerRegistrationRetryTest`
 - 异步任务归属 fail-closed：`SysTaskController` 原用 `null` 同时表示「超管」与「取不到登录用户」，会话读取失败会退化成全量可见/可下载（含手机号、邮箱的导出文件）；现只有超管返回 null，其余取不到用户 ID 一律 401 拒绝（与文件模块同口径）
 - 部门层级与成环：修改部门时补「上级不能是自己的下级」校验，并在父级变更后重算本部门与全部下级的 `level`；新建根部门 `level` 修正为 1（此前父级为 0 时写成 2），`level` 为空时不再在列表排序处 NPE
 - 工作流角色审批人：`JfFastAssigneeResolver` 支持文档约定的角色 key（如 `manager`，先解析为角色 ID），并把 `role_id` 的 LIKE 匹配改为 `FIND_IN_SET` 精确匹配（LIKE 的 `1` 会命中 `11`/`21`，审批人范围被放大）；角色不存在时跳过并告警，不再静默配置出 0 个审批人
@@ -49,6 +53,10 @@
 - 文件上传幂等：`@Idempotent` 键改用「文件名 + 大小」标识 `MultipartFile`（原 `toString()` 是对象身份哈希，每次请求都不同 ⇒ 导入接口防重失效）
 - 删除死配置：`mybatis-plus.type-aliases-package` 指向不存在的包且全部 Mapper XML 已用全限定类名，移除该键
 - 文档口径：`开发规范.md` 的异步任务产物目录改为「存储根之外」（与代码「根内即启动失败」一致）
+- 删号残留社交绑定：`SysUserService#deleteUser` 只清 `sys_user_role` / `sys_user_dept`，`sys_social_bind` 行留着会永久占住唯一键 `uk_provider_openid`（该社交账号既绑不到其他账号，也回不到原账号，只能手工删库）；现删号一并清理。该表由**可选**脚本 `sql/social_bind.sql` 创建，故仅在 `jffast.social.enabled=true` 时执行，未启用社交的部署不受影响；配套 `SysUserDeleteCleanupTest`
+- 工作流任务分页：`WfTaskController` 手工 `(pageNo-1)*pageSize`，`pageNo=0` 会给 Flowable 传负 offset（接口 500），`pageSize` 也无上限；现页码归一为 ≥1、每页收敛到 200、offset 用 long 计算防整型溢出；配套 `WfTaskControllerTest` 分页用例
+- 部门搜索回填祖先越权：`SysDeptService#loadDeptIndex` 原以无条件全表查询建索引，按名称检索时会把**数据范围外**祖先的 id / 名称一并回填进结果；索引改走带 `@DataPermission` 的 `SysDeptScopeQuery#listVisibleForIndex`，范围外父级取不到即停；配套 `SysDeptListScopeTest`
+- 字典缓存跨租户串用：缓存键 `jffast:dict:type:<code>` 不含租户维度，多租户下先被读到的那家字典会被其他租户复用；键改为 `jffast:dict:type:<tenantId>:<code>`（无登录态落固定维度 `0`），读、写、失效三处同键；配套 `SysDictCacheTenantScopeTest`
 
 - **提权：`LoginUtil.isSuperAdmin()` 用错常量**——判定超管的依据取自 `BaseConstant.SUPER_ADMIN`（值 `"admin"`），但那是**超管用户名**不是 roleKey；超管的 roleKey 是 `BaseConstant.ROLE_SUPER_ADMIN`（`"super_admin"`），而 `BaseConstant.ROLE_ADMIN`（`"admin"`）是**部门级管理员**的 roleKey（数据范围=本部门）。⇒ 任何被授予部门级管理员角色的普通用户都被判成超管，5 个消费点全部越权：请假申请列表 / 归属校验 / 删除（`LeaveApplicationService`）、任务当前操作人（`SysTaskController`）、角色操作者上下文（`SysRoleService`）、用户导入上下文（`SysUserImportContextFactory`）。改为按 roleKey 判定，并抽出包内纯函数 `isSuperAdminByRole(List<String>, List<Long>)`；新增 `LoginUtilSuperAdminTest`（6 例，钉住"部门管理员不是超管"）
 - **Redis 多态反序列化从"全放行"收紧为白名单**：原 `JfFastRedisAutoConfiguration` 用 `activateDefaultTyping(..., ALLOW_ALL_SUB_TYPES)` —— 任何能写入 Redis 的一方都能让服务端实例化任意类。改为 `RedisPolymorphicTypeValidator`：白名单 = `cn.jfspeed.*` + `java.lang` 包装类型 + `java.util` 容器；白名单外抛 `InvalidTypeIdException`（**失败关闭**）。保留 `DefaultTyping.NON_FINAL`（`List<SysDict>` 这类集合需要类型信息才能读回）；配套 `RedisPolymorphicTypeValidatorTest`（6 例）
@@ -112,6 +120,7 @@
 - `LICENSE` 恢复为 Apache-2.0 **官方未修改正文**：此前正文被改写过（§4(b) "those notices" → "any notices"、§9 删去 "or different" 许可选项、APPENDIX 整段删除），与 README / NOTICE 声称的 Apache-2.0 不一致；改写版许可证不受 OSI 承认，等于「声称 Apache-2.0 实际不是」。现与 `https://www.apache.org/licenses/LICENSE-2.0.txt` 逐字节一致（11357 字节；复原后仍留有一个前导空行，也一并删掉——差 1 个字节的许可证严格讲仍是"被修改过的"）
 - `mvnw` 与 `deploy/gen-rsa.sh` 补执行位（100755）：Windows 上不影响使用，Linux / macOS 克隆后 `./mvnw` 直接 `permission denied`，无 Maven 的读者第一步就走不通
 - 角色 `role_key` 重名不再由应用层独扛（开源前复核 D1）：`role_key` 是授权判定依据，服务层用 `selectOne(eq("role_key", "common"))` 取「普通用户角色」来生成新角色 id，一旦重名 `selectOne` 直接抛结果集异常、**新建角色整条链 500**；而控制器的 `checkRoleNameAndKey` 是「先查后插」，并发下两个请求能双双通过。现由库侧 `UNIQUE (tenant_id, role_key)` 兜底，冲突翻译成可读提示（`角色标识已被占用：xxx`，不再把索引名/SQL 原文透到前端）。门禁：`RoleKeyUniquenessDdlTest`（3 项，含"去掉索引/改成可空就变红"的反证）+ `SysRoleDuplicateKeyTranslationTest`（2 项）
+- 快速开始「四张表的菜单已随 `system_init_data.sql` 播种」的说法订正（`README.md` 简写版与 `deploy/README.md`，此前与同文件详细版自相矛盾）：岗位 / 异步任务 / 文件管理的前端菜单分别在 `sql/sys_post.sql` / `sys_task.sql` / `sys_file.sql` 里播种，`system_init_data.sql` 只含「通知管理→模板」的菜单与按钮权限。照原注释理解、只导 `system_init_data.sql` 的读者拿不到前三者的菜单
 
 ### 安全
 
@@ -144,11 +153,13 @@
 - 用户写接口：`deptList: []` 清空原有非空绑定、归属部门不在绑定集合、创建时显式绑定不含 `deptId`，现在一律返回业务码 403（此前可写入零绑定或分叉数据）；存量零绑定账号的纯字段编辑仍放行
 - 管理员重置密码：`POST /sys/user/resetPassword` 请求体改为 `{"userId": ...}`（不再需要 `oldPassword`），响应从字符串改为 `{userId,userName,password}`；`POST /sys/user/updatePassword` 不再接受 `userId` 字段
 - 社交账号绑定：`POST /social/bind` 请求体改为 `{"ticket": "..."}`，票据只能取自 `GET /social/callback` 的响应；回调 `state` 必须是服务端签发且 10 分钟内有效
+- 社交账号绑定回调：`jffast.social.providers.*.redirect-uri` 默认值由后端接口地址改为**前端中转页** `http://localhost:7201/social/callback`（已启用社交绑定的部署需同步修改第三方平台登记的回调地址）；`GET /social/callback` 不再匿名放行，改为**需要登录态**（匿名兑换会签发与用户无关的绑定票据，并把已绑定的 userId 回吐给匿名调用方）
 - 定时任务：`jffast.job.invoke.allowed-packages` 默认值由 `cn.jfspeed` 改为空，只有标注 `@JfFastJob` 的方法可直接调度，其他任务需显式追加所在包前缀
 - `AESUtil` 的环境变量名 `JP_FAST_AES_KEY` / `JP_FAST_AES_IV` → **`JFFAST_AES_KEY` / `JFFAST_AES_IV`**（品牌统一时 `JPFAST_* → JFFAST_*` 的漏改项；系统属性名 `jffast.aes.key` / `jffast.aes.iv` 未变）。仍设旧变量名的部署会因取不到密钥而**启动即抛** `IllegalStateException: AES 密钥未配置`（不会静默换钥解密出乱码），改名即可
 - 用户部门字段：`deptId=0` 或指向不存在部门将返回 400「部门不存在」，无部门必须传 `null`/不传（`sys_user.dept_id` 默认 NULL）
 - 角色写接口：非超管创建/更新 `dataScope=1/5`、授予超出自身菜单、修改自己所属角色一律拒绝；角色更新仅在授权字段变化时撤销绑定用户会话
 - 异步任务可见范围：普通用户只能看到/下载/删除自己创建的任务（历史 `create_by=0` 归超管）
+- 定时任务 SPI：`JobStore#insert(JobRecord)` 返回类型由 `void` 改为 `boolean`（true = 真的插入了这一行）。自定义 `JobStore` 实现需同步改签名 —— 这是为了不让"存储不可用 / 撞唯一键 / 写入失败"被调用方当成已登记（详见 `docs/开发规范.md` §18.4）
 
 ## [1.1.0] — 2026-10-11
 

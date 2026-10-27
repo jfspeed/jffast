@@ -5,7 +5,7 @@
 -- 注意：Flowable 引擎表必须先导入（空库不会自动建全；版本行必须与引擎版本一致，
 --   否则启动走升级路径并报 FlowableOptimisticLockingException，见 flowable_schema 内说明）。
 -- 执行本文件前，需先执行 flowable_schema/flowable_mysql_all.sql 导入 Flowable 引擎表（ACT_* + FLW_*，8.0.0）
--- 执行顺序：flowable_schema/flowable_mysql_all.sql → system_sql.sql → system_init_data.sql → 本文件
+-- 完整导入清单与顺序：见 README.md「快速开始 → 2. 初始化数据库」（唯一权威，此处不复制一份以免漂移）
 --
 -- ⚠️ 菜单 ID 段：**3000-3099**（2026-09-22 定）
 --

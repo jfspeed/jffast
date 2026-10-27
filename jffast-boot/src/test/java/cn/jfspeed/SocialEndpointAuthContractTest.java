@@ -32,27 +32,32 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.yaml.snakeyaml.Yaml;
 
 /**
- * 配置契约：社交登录的「登录前」端点必须匿名可达，「登录后」端点必须仍受登录态保护。
+ * 配置契约：社交账号绑定的端点按「是否需要登录态」分成两组，不能混。
  *
- * <p>背景（2026-10-26 开源前复核）：{@code SocialLoginController} 的
- * {@code /social/authorize}（跳第三方）与 {@code /social/callback}（第三方回跳）发生在
- * 登录之前，浏览器此时**没有**登录态；而 {@code jffast.security.auth-excludes} 里既没有
- * {@code PUBLIC_PATHS} 也没有这两个路径 ⇒ {@code SaInterceptor} 的 {@code StpUtil.checkLogin()}
- * 直接抛 401 ⇒ 整条社交登录链完全不可用（实测 {@code GET /social/authorize} → HTTP 401）。
+ * <p>分组依据 2026-10-27 的链路改造：第三方平台按 {@code redirect-uri} 回跳到的是**前端中转页**
+ * （{@code /social/callback}），授权码只能在中转页里取出，真正兑换授权码的是**发起绑定的那个
+ * 已登录窗口**调后端 {@code GET /social/callback}。于是：
  *
- * <p>同时钉住另一半：{@code bind} / {@code unbind} / {@code binds} 是个人维度的绑定管理，
- * 必须**仍需登录态**，不能因为「社交端点要匿名」而被一起排除。
+ * <ul>
+ *   <li>{@code /social/authorize}（跳第三方）仍必须**匿名可达** —— 它发生在绑定之前，
+ *       用户此刻还没有登录态；</li>
+ *   <li>{@code /social/callback}（兑换授权码、签发绑定票据）必须**受登录态保护** ——
+ *       匿名放行等于把一张「与用户无关」的绑定票据发给任何拿到 code+state 的人
+ *       （票据里 userId 为空 ⇒ bind 侧的「票据与当前登录用户不匹配」校验形同虚设），
+ *       还会把已绑定的 userId 回吐给匿名调用方；</li>
+ *   <li>{@code bind} / {@code unbind} / {@code binds} 是个人维度的绑定管理，同样需登录态。</li>
+ * </ul>
  *
  * <p>安全性：社交控制器整体带 {@code @ConditionalOnProperty(jffast.social.enabled=true)}，
- * 未启用时根本不注册 ⇒ 排除这两个路径不会暴露任何东西。
+ * 未启用时根本不注册 ⇒ 排除 {@code /social/authorize} 不会暴露任何东西。
  *
  * @author jffast
  */
-class SocialAnonymousEndpointContractTest {
+class SocialEndpointAuthContractTest {
 
     @SuppressWarnings("unchecked")
     private static Map<String, Object> resource(String path) throws IOException {
-        try (InputStream in = SocialAnonymousEndpointContractTest.class.getResourceAsStream(path)) {
+        try (InputStream in = SocialEndpointAuthContractTest.class.getResourceAsStream(path)) {
             assertNotNull(in, "缺少资源：" + path);
             return new Yaml().load(new String(in.readAllBytes(), StandardCharsets.UTF_8));
         }
@@ -67,13 +72,20 @@ class SocialAnonymousEndpointContractTest {
     }
 
     @Test
-    @DisplayName("社交登录的 authorize / callback 必须匿名可达")
-    void socialLoginBeforeEndpointsAreAnonymous() throws IOException {
+    @DisplayName("社交账号绑定的 authorize 必须匿名可达")
+    void socialAuthorizeIsAnonymous() throws IOException {
         List<String> excludes = authExcludes();
         assertTrue(excludes.contains("/social/authorize"),
-                "/social/authorize 必须免登录：跳第三方授权发生在登录前，否则整条社交登录链 401。实际：" + excludes);
-        assertTrue(excludes.contains("/social/callback"),
-                "/social/callback 必须免登录：第三方回跳时浏览器无登录态，否则回调恒 401。实际：" + excludes);
+                "/social/authorize 必须免登录：跳第三方授权发生在绑定之前，否则整条绑定链 401。实际：" + excludes);
+    }
+
+    @Test
+    @DisplayName("社交账号兑换授权码的 callback 必须受登录态保护")
+    void socialCallbackRequiresLogin() throws IOException {
+        List<String> excludes = authExcludes();
+        assertFalse(excludes.contains("/social/callback"),
+                "/social/callback 兑换一次性授权码并签发绑定票据，匿名放行等于把票据发给任何拿到 code+state 的人"
+                        + "（票据 userId 为空 ⇒ bind 侧的用户匹配校验失效），还会把已绑定的 userId 回吐给匿名调用方。实际：" + excludes);
     }
 
     @Test

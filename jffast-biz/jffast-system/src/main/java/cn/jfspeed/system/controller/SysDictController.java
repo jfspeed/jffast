@@ -22,7 +22,6 @@ import jakarta.validation.Valid;
 import cn.jfspeed.system.domain.dto.SysDictRequest;
 import cn.jfspeed.common.core.util.IdUtils;
 import cn.jfspeed.system.util.PinyinCodeUtil;
-import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import cn.jfspeed.system.domain.dto.SysDictQueryRequest;
 import cn.jfspeed.log.annotation.SLog;
 import cn.jfspeed.security.annotation.DistributedLock;
@@ -116,10 +115,11 @@ public class SysDictController extends BaseController<SysDictService,SysDict> {
     @Operation(summary = "新增字典")
     public R insert(@RequestBody @Valid SysDictRequest req) {
         SysDict dict = BeanUtil.copyProperties(req, SysDict.class);
-        if (service.hasDictByNameAndCode(dict.getName(), null, dict.getId())){
+        // 查重按「同父级 + 同类别」范围：不同字典类型下的字典项允许同名/同编码
+        if (service.hasDictByNameAndCode(dict.getName(), null, dict.getId(), dict.getParentId(), dict.getIsType())){
             return R.error("字典名称已存在");
         }
-        if (service.hasDictByNameAndCode(null, dict.getCode(), dict.getId())){
+        if (service.hasDictByNameAndCode(null, dict.getCode(), dict.getId(), dict.getParentId(), dict.getIsType())){
             return R.error("字典编码已存在");
         }
         dict.setId(IdUtils.snowflakeShort());
@@ -136,10 +136,18 @@ public class SysDictController extends BaseController<SysDictService,SysDict> {
     @Operation(summary = "修改")
     public R update(@RequestBody @Valid SysDictRequest req) {
         SysDict dict = BeanUtil.copyProperties(req, SysDict.class);
-        if (service.hasDictByNameAndCode(dict.getName(), null, dict.getId())){
+        // 查重按「同父级 + 同类别」范围：不同字典类型下的字典项允许同名/同编码。
+        // 请求未带 parentId / isType 时按「保持原值」处理（updateById 不更新 null 字段），
+        // 查重作用域也要跟着取库里的原值，否则会把「改的是字典类型」当成字典项去查。
+        SysDict existing = req.getId() == null ? null : service.getById(req.getId());
+        Long scopeParentId = dict.getParentId() != null ? dict.getParentId()
+                : (existing == null ? null : existing.getParentId());
+        Integer scopeIsType = dict.getIsType() != null ? dict.getIsType()
+                : (existing == null ? null : existing.getIsType());
+        if (service.hasDictByNameAndCode(dict.getName(), null, dict.getId(), scopeParentId, scopeIsType)){
             return R.error("字典名称已存在");
         }
-        if (service.hasDictByNameAndCode(null, dict.getCode(), dict.getId())){
+        if (service.hasDictByNameAndCode(null, dict.getCode(), dict.getId(), scopeParentId, scopeIsType)){
             return R.error("字典编码已存在");
         }
         service.updateById(dict);
@@ -165,18 +173,17 @@ public class SysDictController extends BaseController<SysDictService,SysDict> {
         return R.success();
     }
 
+    /**
+     * 按字典类型编码取字典项。
+     *
+     * <p>**只要求登录态、不要求字典管理权限**：这是给前端通用下拉框/单选组取字典项的基础接口，
+     * 任何登录用户都会用到（例如个人中心的状态选项）。此前挂 `system:dict:view` 意味着除超管外
+     * 的账号一律 403，与「业务字典是全局只读数据」的定位冲突；同时它与字典管理页的 `/page`
+     * 是两回事——那边带分页、检索与管理字段，仍受权限码保护。
+     */
     @GetMapping("/getByTypeCode")
-    @SaCheckPermission(orRole = BaseConstant.ROLE_SUPER_ADMIN, value = "system:dict:view")
-    @Operation(summary = "根据字典类型代码查询字典项列表")
-    public R getByTypeCode(String dictCode) {
-        SysDict one = service.getByDictCode(dictCode);
-        if (Objects.nonNull(one)){
-            LambdaQueryWrapper<SysDict> query = new LambdaQueryWrapper<>();
-            query.eq(SysDict::getParentId,one.getId());
-            query.eq(SysDict::getIsType,"2");
-            query.orderByAsc(SysDict::getSort);
-            return R.success(service.list(query));
-        }
-        return R.success();
+    @Operation(summary = "根据字典类型代码查询字典项列表", description = "登录即可访问（前端下拉框等基础组件取字典项）")
+    public R<List<SysDict>> getByTypeCode(String dictCode) {
+        return R.success(service.getListByDictCode(dictCode));
     }
 }

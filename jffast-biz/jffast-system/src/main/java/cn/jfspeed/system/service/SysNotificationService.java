@@ -141,6 +141,10 @@ public class SysNotificationService extends BaseService<SysNotificationMapper, S
     public void sendNotification(SysNotification notification) {
         String sender = StrUtil.blankToDefault(LoginUtil.getLoginUserName(), NotificationConstant.DEFAULT_SENDER);
 
+        // 先校验接收人参数：类型缺失**不能**默认成「全体用户」（那是一次无意的全员广播），
+        // 非 all 类型必须给出接收人（否则这条通知注定发不出去）。
+        validateRecipient(notification);
+
         SysNotification existing = null;
         if (notification.getId() != null) {
             existing = baseMapper.selectById(notification.getId());
@@ -155,22 +159,56 @@ public class SysNotificationService extends BaseService<SysNotificationMapper, S
             existing.setRecipientIds(notification.getRecipientIds());
             // 发送通道为瞬态字段，从本次请求带回（existing 只含表字段）
             existing.setChannels(notification.getChannels());
-            existing.setStatus(NotificationConstant.STATUS_SENT);
-            existing.setSendTime(LocalDateTime.now());
-            baseMapper.updateById(existing);
             notification = existing;
         } else {
             notification.setSender(sender);
-            notification.setStatus(NotificationConstant.STATUS_SENT);
-            notification.setSendTime(LocalDateTime.now());
             applyDefaults(notification);
+        }
+
+        // 接收人解析放在落库之前：解析不到人就不能把这条通知记成「已发送」
+        // （原实现先置 SENT + sendTime 再解析，于是「0 人接收」也会留下一条已发送记录）
+        Set<Long> recipientUserIds = resolveRecipientUserIds(notification);
+        if (recipientUserIds.isEmpty()) {
+            throw new BusinessException("未解析到接收人，通知未发送");
+        }
+
+        notification.setStatus(NotificationConstant.STATUS_SENT);
+        notification.setSendTime(LocalDateTime.now());
+        if (existing != null) {
+            baseMapper.updateById(existing);
+        } else {
             baseMapper.insert(notification);
         }
 
-        Set<Long> recipientUserIds = resolveRecipientUserIds(notification);
-
         createRecords(notification.getId(), recipientUserIds);
         dispatchAfterCommit(recipientUserIds, notification);
+    }
+
+    /**
+     * 校验接收人参数（fail-closed）。
+     *
+     * <p>两条都必须拦：
+     * <ul>
+     *   <li>接收人类型为空 ⇒ 拒绝。空值**不能**兜底成「全体用户」——那等于一次无意的全员广播；</li>
+     *   <li>类型不在 all/role/dept/user 内 ⇒ 拒绝（避免拼错的值静默解析出 0 人）；</li>
+     *   <li>类型不是 all 时接收人为空 ⇒ 拒绝（这类通知注定 0 人接收）。</li>
+     * </ul>
+     */
+    private void validateRecipient(SysNotification notification) {
+        String recipientType = notification.getRecipientType();
+        if (StrUtil.isBlank(recipientType)) {
+            throw new BusinessException("接收人类型不能为空");
+        }
+        if (!NotificationConstant.RECIPIENT_ALL.equals(recipientType)
+                && !NotificationConstant.RECIPIENT_ROLE.equals(recipientType)
+                && !NotificationConstant.RECIPIENT_DEPT.equals(recipientType)
+                && !NotificationConstant.RECIPIENT_USER.equals(recipientType)) {
+            throw new BusinessException("接收人类型不合法：" + recipientType);
+        }
+        if (!NotificationConstant.RECIPIENT_ALL.equals(recipientType)
+                && StrUtil.isBlank(notification.getRecipientIds())) {
+            throw new BusinessException("请选择接收人");
+        }
     }
 
     // ────────────────────────────────────────────────────────────────
@@ -353,12 +391,15 @@ public class SysNotificationService extends BaseService<SysNotificationMapper, S
     /**
      * 解析通知的接收人 ID 集合。
      * <p>
-     * recipientType 为空或 all → 全体用户；role/dept → 关联表解析；user → recipientIds 直接作为用户 ID。
+     * all → 全体用户；role/dept → 关联表解析；user → recipientIds 直接作为用户 ID。
      * 只查询 id 列，避免把整张用户表加载进内存。
+     * <p>
+     * 接收人类型为空或非白名单值时**返回空集**（不广播）：调用方据此判定「未解析到接收人」并拒绝发送，
+     * 避免参数缺失被当成「发给全体」。
      */
     private Set<Long> resolveRecipientUserIds(SysNotification notification) {
         String recipientType = notification.getRecipientType();
-        if (StrUtil.isBlank(recipientType) || NotificationConstant.RECIPIENT_ALL.equals(recipientType)) {
+        if (NotificationConstant.RECIPIENT_ALL.equals(recipientType)) {
             return toUserIdSet(sysUserMapper.selectList(new LambdaQueryWrapper<SysUser>().select(SysUser::getId)));
         }
 

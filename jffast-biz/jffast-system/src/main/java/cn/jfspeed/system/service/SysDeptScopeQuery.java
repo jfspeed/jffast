@@ -59,4 +59,19 @@ public class SysDeptScopeQuery {
         query.select(SysDept::getId, SysDept::getDeptName);
         return sysDeptMapper.selectList(query);
     }
+
+    /**
+     * 部门列表按名称检索时回填祖先用的索引（只取补链所需列）。
+     *
+     * <p>索引必须受数据权限约束：无条件全表建索引时，范围内的子部门会沿父链把**范围外**
+     * 祖先的 id / 名称一并回填进结果。范围外父级在本索引里取不到，{@code appendAncestors}
+     * 即停，不会把不可见的部门补出来。
+     */
+    @DataPermission(deptField = "id")
+    public List<SysDept> listVisibleForIndex() {
+        LambdaQueryWrapper<SysDept> query = new LambdaQueryWrapper<>();
+        query.select(SysDept::getId, SysDept::getParentId, SysDept::getDeptName,
+                SysDept::getLevel, SysDept::getCreateTime);
+        return sysDeptMapper.selectList(query);
+    }
 }

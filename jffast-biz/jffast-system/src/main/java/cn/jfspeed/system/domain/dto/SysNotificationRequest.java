@@ -19,11 +19,12 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotBlank;
 import lombok.Data;
 
-import java.time.LocalDateTime;
-
 /**
  * 通知新增/修改请求体。
- * 与实体分离：不接收审计字段，避免客户端伪造写入造成越权。
+ *
+ * <p>只包含**客户端可编辑**的业务字段：发送人、发送状态、发送时间由服务端在发送链路里写入
+ * （{@code SysNotificationService#sendNotification}），故不在此暴露——否则调用方可直接
+ * 把通知标成「已发送」、伪造发送人，绕过真实发送逻辑。
  *
  * @author jffast
  */
@@ -48,20 +49,11 @@ public class SysNotificationRequest {
     @Schema(description = "通知级别：info / warning / error")
     private String level;
 
-    @Schema(description = "发送人")
-    private String sender;
-
     @Schema(description = "接收人类型：all-全体，role-角色，dept-部门，user-用户")
     private String recipientType;
 
     @Schema(description = "接收人ID列表（逗号分隔）")
     private String recipientIds;
-
-    @Schema(description = "状态：0-未发送，1-已发送")
-    private Integer status;
-
-    @Schema(description = "发送时间")
-    private LocalDateTime sendTime;
 
     /** 非表字段：仅在发送请求中携带，不落库 */
     @Schema(description = "发送通道（逗号分隔，如 email,sms；站内信始终发送）")

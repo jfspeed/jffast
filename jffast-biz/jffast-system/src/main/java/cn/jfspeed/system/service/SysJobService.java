@@ -27,7 +27,6 @@ import cn.jfspeed.job.scheduler.JobScheduler;
 import cn.jfspeed.job.util.CronUtil;
 import cn.jfspeed.system.domain.dto.SysJobQueryRequest;
 import cn.jfspeed.system.entity.SysJob;
-import cn.jfspeed.system.entity.SysJobLog;
 import cn.jfspeed.system.mapper.SysJobMapper;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
@@ -60,9 +59,6 @@ public class SysJobService extends BaseService<SysJobMapper, SysJob> {
 
     @Resource
     private JobScheduler jobScheduler;
-
-    @Resource
-    private SysJobLogService sysJobLogService;
 
     /**
      * 新增任务。
@@ -177,24 +173,6 @@ public class SysJobService extends BaseService<SysJobMapper, SysJob> {
         queryWrapper.eq(query.getStatus() != null, SysJob::getStatus, query.getStatus());
         queryWrapper.orderByDesc(SysJob::getCreateTime);
         return PageUtil.resultPageMp(baseMapper.selectPage(pageReq.getPage(), queryWrapper));
-    }
-
-    /**
-     * 分页查询任务执行日志
-     */
-    public PageRes<SysJobLog> pageJobLog(Long jobId, Integer pageNo, Integer pageSize) {
-        LambdaQueryWrapper<SysJobLog> queryWrapper = new LambdaQueryWrapper<>();
-        if (jobId != null) {
-            SysJob job = getById(jobId);
-            if (job == null) {
-                // 任务不存在时不能落成"无过滤条件"，否则会把全部任务的执行日志返回给前端
-                return PageUtil.resultPageMp(new com.baomidou.mybatisplus.extension.plugins.pagination.Page<>(pageNo, pageSize));
-            }
-            queryWrapper.eq(SysJobLog::getJobName, job.getJobName());
-        }
-        queryWrapper.orderByDesc(SysJobLog::getCreateTime);
-        return PageUtil.resultPageMp(sysJobLogService.page(
-                new com.baomidou.mybatisplus.extension.plugins.pagination.Page<>(pageNo, pageSize), queryWrapper));
     }
 
     private JobRecord toRecord(SysJob job) {

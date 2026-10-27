@@ -46,6 +46,9 @@ public class SysDeptService extends BaseService<SysDeptMapper, SysDept>{
     private SysUserMapper sysUserMapper;
     @Resource
     private SysRoleDeptMapper sysRoleDeptMapper;
+    /** 受数据权限约束的部门索引查询（独立 Bean，保证 @DataPermission 切面生效） */
+    @Resource
+    private SysDeptScopeQuery sysDeptScopeQuery;
 
     /**
      * 列表
@@ -71,11 +74,13 @@ public class SysDeptService extends BaseService<SysDeptMapper, SysDept>{
 
     /**
      * 一次性载入部门索引，沿 parentId 链在内存中补全祖先，避免按行查询祖先。
+     *
+     * <p>索引必须走数据权限：无条件全表建索引时，按名称检索到的部门会沿父链把**范围外**
+     * 祖先的 id / 名称一并回填进结果。范围外的父级取不到即停（{@link #appendAncestors} 的
+     * {@code ancestor == null} 分支），不会把不可见的部门补出来。
      */
     private Map<Long, SysDept> loadDeptIndex() {
-        QueryWrapper<SysDept> queryWrapper = new QueryWrapper<>();
-        queryWrapper.select("id", "parent_id", "dept_name", "level", "create_time");
-        return baseMapper.selectList(queryWrapper).stream()
+        return sysDeptScopeQuery.listVisibleForIndex().stream()
                 .collect(Collectors.toMap(SysDept::getId, dept -> dept, (a, b) -> a));
     }
 
@@ -233,15 +238,27 @@ public class SysDeptService extends BaseService<SysDeptMapper, SysDept>{
     }
 
     /**
-     * 校验公司/部门名称是否唯一
+     * 校验同一上级下的部门名称是否唯一。
+     *
+     * <p>`parentId` 的缺省语义必须和 {@link #createDept} / {@link #updateDept} 对齐：
+     * 新增时缺省表示挂到根（{@link BaseConstant#PARENT_ID}），修改时缺省表示「上级不变」。
+     * 否则 {@code parent_id = NULL} 永远匹配不到行（NULL 与任何值比较都是 UNKNOWN），
+     * 凡是不带上级的请求都会得到「名称不重复」，同一上级下可以刷出任意多个同名部门。
      */
     public boolean checkDeptName(SysDept dept) {
-        QueryWrapper<SysDept> queryWrapper = new QueryWrapper<>();
-        queryWrapper.lambda().eq(SysDept::getDeptName,dept.getDeptName());
-        queryWrapper.lambda().eq(SysDept::getParentId,dept.getParentId());
-        if (dept.getId()!=null){
-            queryWrapper.lambda().ne(SysDept::getId,dept.getId());
+        Long parentId = dept.getParentId();
+        if (parentId == null && dept.getId() != null) {
+            SysDept existing = getById(dept.getId());
+            parentId = existing == null ? null : existing.getParentId();
         }
+        if (parentId == null) {
+            parentId = BaseConstant.PARENT_ID;
+        }
+        QueryWrapper<SysDept> queryWrapper = new QueryWrapper<>();
+        queryWrapper.lambda()
+                .eq(SysDept::getDeptName, dept.getDeptName())
+                .eq(SysDept::getParentId, parentId)
+                .ne(dept.getId() != null, SysDept::getId, dept.getId());
         long count = this.baseMapper.selectCount(queryWrapper);
         return count > 0;
     }

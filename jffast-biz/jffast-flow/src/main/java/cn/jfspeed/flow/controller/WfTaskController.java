@@ -53,6 +53,11 @@ import java.util.Map;
 @Tag(name = "任务管理")
 public class WfTaskController {
 
+    /** 默认每页条数（与前端分页组件的默认值一致） */
+    private static final int DEFAULT_PAGE_SIZE = 10;
+    /** 每页上限：Flowable 的 listPage 会按此值实际取数，不设上限等于允许一次拖全量 */
+    private static final int MAX_PAGE_SIZE = 200;
+
     private final FlowService flowService;
     private final FlowAccessService flowAccessService;
 
@@ -67,8 +72,10 @@ public class WfTaskController {
     public R todoPage(@RequestParam(defaultValue = "1") Integer pageNo,
                       @RequestParam(defaultValue = "10") Integer pageSize) {
         String userId = flowAccessService.currentUserId();
+        int safePageNo = normalizePageNo(pageNo);
+        int safePageSize = normalizePageSize(pageSize);
         long total = flowService.countTodoTasks(userId);
-        List<WfTaskVO> list = toTaskVOs(flowService.listTodoTasks(userId, (pageNo - 1) * pageSize, pageSize));
+        List<WfTaskVO> list = toTaskVOs(flowService.listTodoTasks(userId, offsetOf(safePageNo, safePageSize), safePageSize));
         Map<String, Object> result = new HashMap<>(4);
         result.put("total", total);
         result.put("list", list);
@@ -81,8 +88,10 @@ public class WfTaskController {
     public R candidatePage(@RequestParam(defaultValue = "1") Integer pageNo,
                            @RequestParam(defaultValue = "10") Integer pageSize) {
         String userId = flowAccessService.currentUserId();
+        int safePageNo = normalizePageNo(pageNo);
+        int safePageSize = normalizePageSize(pageSize);
         long total = flowService.countCandidateTasks(userId);
-        List<WfTaskVO> list = toTaskVOs(flowService.listCandidateTasks(userId, (pageNo - 1) * pageSize, pageSize));
+        List<WfTaskVO> list = toTaskVOs(flowService.listCandidateTasks(userId, offsetOf(safePageNo, safePageSize), safePageSize));
         Map<String, Object> result = new HashMap<>(4);
         result.put("total", total);
         result.put("list", list);
@@ -157,6 +166,28 @@ public class WfTaskController {
             throw new BusinessException("任务不存在或已完成");
         }
         return task;
+    }
+
+    /**
+     * 页码归一到 ≥ 1：Flowable 的 {@code listPage(firstResult, maxResults)} 要求
+     * {@code firstResult >= 0}，而 {@code pageNo=0} 会算出负 offset 直接 500。
+     */
+    static int normalizePageNo(Integer pageNo) {
+        return pageNo == null || pageNo < 1 ? 1 : pageNo;
+    }
+
+    /** 每页条数归一到 [1, {@value #MAX_PAGE_SIZE}]；缺省/非法值落默认 10。 */
+    static int normalizePageSize(Integer pageSize) {
+        if (pageSize == null || pageSize < 1) {
+            return DEFAULT_PAGE_SIZE;
+        }
+        return Math.min(pageSize, MAX_PAGE_SIZE);
+    }
+
+    /** 偏移量；用 long 计算再收敛，避免 {@code pageNo} 极大时整型溢出成负数。 */
+    static int offsetOf(int pageNo, int pageSize) {
+        long offset = (long) (pageNo - 1) * pageSize;
+        return offset > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) offset;
     }
 
     /**

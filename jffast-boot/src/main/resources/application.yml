@@ -88,12 +88,14 @@ jffast:
     auth-excludes:
       - /oauth2/client/authorize/**
       - /oauth2/client/callback/**
-      # 社交登录：authorize（跳第三方）与 callback（第三方回跳）发生在登录前，浏览器无登录态，
-      # 必须匿名可达；bind / unbind / binds 是个人维度的绑定管理，仍需登录态，故**不**排除。
+      # 社交账号绑定：authorize（跳第三方）发生在绑定前的匿名阶段，必须免登录。
+      # callback（兑换授权码）**需要登录态**：第三方回跳到的是前端中转页，
+      # 真正调本接口的是发起绑定的那个已登录窗口；匿名放行会让「持有 code+state 的人」
+      # 换到一张与用户无关的绑定票据，并把已绑定的 userId 回吐给匿名调用方。
+      # bind / unbind / binds 是个人维度的绑定管理，同样需登录态。
       # 社交端点由 @ConditionalOnProperty(jffast.social.enabled=true) 控制，
-      # 未启用时控制器根本不注册 ⇒ 排除这两个路径不会暴露任何东西。
+      # 未启用时控制器根本不注册 ⇒ 排除该路径不会暴露任何东西。
       - /social/authorize
-      - /social/callback
       # 容器 / K8s 健康探针必须在未登录时可达；其余 actuator 端点仍按环境暴露策略鉴权
       - /actuator/health/**
       # 公钥用于加密登录密码，必须在登录前可读（公钥本身非机密）
@@ -151,15 +153,20 @@ jffast:
       expose-token: ${JFFAST_OAUTH2_EXPOSE_TOKEN:false}
   social:
     enabled: false
+    # `redirect-uri` 必须是**前端**地址（社交平台按它回跳），不是后端接口地址：
+    # 授权码只能用一次、且必须由后端兑换成 access_token，所以前端页面拿到 code/state 后
+    # 把它交回**发起绑定**的那个同源窗口，由那个窗口调后端 `/social/callback` 兑换。
+    # 前端中转页默认在 http://localhost:7201/social/callback（开发时前端端口 7201）。
+    # 平台标识（provider）由后端从签名 state 里解码得到，回跳地址**不需要**带 provider 参数。
     providers:
       github:
         client-id: ${GITHUB_CLIENT_ID:}
         client-secret: ${GITHUB_CLIENT_SECRET:}
-        redirect-uri: ${GITHUB_REDIRECT_URI:http://localhost:7200/jffast-api/social/callback?provider=github}
+        redirect-uri: ${GITHUB_REDIRECT_URI:http://localhost:7201/social/callback}
       gitee:
         client-id: ${GITEE_CLIENT_ID:}
         client-secret: ${GITEE_CLIENT_SECRET:}
-        redirect-uri: ${GITEE_REDIRECT_URI:http://localhost:7200/jffast-api/social/callback?provider=gitee}
+        redirect-uri: ${GITEE_REDIRECT_URI:http://localhost:7201/social/callback}
   flow:
     enabled: true
   job:

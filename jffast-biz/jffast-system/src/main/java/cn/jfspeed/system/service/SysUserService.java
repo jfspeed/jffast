@@ -55,12 +55,14 @@ import cn.jfspeed.system.entity.SysUser;
 import cn.jfspeed.system.entity.SysUserDept;
 import cn.jfspeed.system.entity.SysUserRole;
 import cn.jfspeed.system.event.UserAuthorizationChangedEvent;
+import cn.jfspeed.system.mapper.SysSocialBindMapper;
 import cn.jfspeed.system.mapper.SysUserDeptMapper;
 import cn.jfspeed.system.mapper.SysUserMapper;
 import cn.jfspeed.system.mapper.SysUserRoleMapper;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.ibatis.exceptions.TooManyResultsException;
+import org.springframework.beans.factory.annotation.Value;
 
 /**
  * @author jffast
@@ -77,6 +79,16 @@ public class SysUserService extends BaseService<SysUserMapper, SysUser>{
     private SysUserDeptMapper sysUserDeptMapper;
     @Resource
     private SysUserRoleMapper sysUserRoleMapper;
+    @Resource
+    private SysSocialBindMapper sysSocialBindMapper;
+    /**
+     * 社交账号绑定开关（与 {@code JfFastSocialAutoConfiguration} 同一属性）。
+     * <p>
+     * {@code sys_social_bind} 由**可选**脚本 {@code sql/social_bind.sql} 创建，未启用社交功能时
+     * 表可能根本不存在；此时无条件 DELETE 会让删号直接 500。启用即代表部署方已导入该脚本。
+     */
+    @Value("${jffast.social.enabled:false}")
+    private boolean socialEnabled;
     /** 初始密码（jffast.system.init-password）：导入用户写入的默认密码 */
     @Resource
     private JfFastSystemProperties jfFastSystemProperties;
@@ -239,9 +251,19 @@ public class SysUserService extends BaseService<SysUserMapper, SysUser>{
         return user;
     }
 
-    /** 删除用户并清理角色/部门绑定；会话失效由调用方在事务提交后处理 */
+    /**
+     * 删除用户并清理角色/部门/社交账号绑定；会话失效由调用方在事务提交后处理。
+     *
+     * <p>{@code sys_social_bind} 必须一起清：唯一键 {@code uk_provider_openid} 是
+     * {@code (provider, open_id)}，行留着就永久占位——被删用户的社交账号既绑不到新账号，
+     * 也无法再绑回自己，只能手工删库把行清掉。
+     */
     @Transactional(rollbackFor = Exception.class)
     public void deleteUser(Long userId) {
+        if (socialEnabled) {
+            sysSocialBindMapper.deleteByUserId(userId);
+        }
+
         LambdaQueryWrapper<SysUserRole> roleQuery = new LambdaQueryWrapper<>();
         roleQuery.eq(SysUserRole::getUserId, userId);
         sysUserRoleMapper.delete(roleQuery);

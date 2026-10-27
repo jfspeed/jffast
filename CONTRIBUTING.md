@@ -142,10 +142,10 @@ git clone https://github.com/your-username/jffast.git
 cd jffast
 
 # 2. 初始化数据库
-mysql -h 127.0.0.1 -uroot -ptest1234 jffast < sql/system_sql.sql
-mysql -h 127.0.0.1 -uroot -ptest1234 jffast < sql/system_init_data.sql
-mysql -h 127.0.0.1 -uroot -ptest1234 jffast < sql/flowable_schema/flowable_mysql_all.sql
-mysql -h 127.0.0.1 -uroot -ptest1234 jffast < sql/flow_sql.sql
+#    完整清单与导入顺序以 README.md「快速开始 → 2. 初始化数据库」为唯一权威，
+#    本文不复制一份（两处清单必然漂移）。命令形态：
+#      mysql -h 127.0.0.1 -uroot -ptest1234 jffast < sql/<清单里的文件>.sql
+#    ⚠ 其中 sql/flowable_schema/flowable_mysql_all.sql 必须在**首次启动前**导入，缺它后端起不来。
 
 # 3. 编译后端
 mvn clean install -DskipTests
@@ -166,11 +166,10 @@ npm run dev
 # 启动 MySQL + Redis
 docker compose up -d
 
-# 导入 SQL
-mysql -h 127.0.0.1 -uroot -ptest1234 jffast < sql/system_sql.sql
-mysql -h 127.0.0.1 -uroot -ptest1234 jffast < sql/system_init_data.sql
-mysql -h 127.0.0.1 -uroot -ptest1234 jffast < sql/flowable_schema/flowable_mysql_all.sql
-mysql -h 127.0.0.1 -uroot -ptest1234 jffast < sql/flow_sql.sql
+# 导入 SQL（根目录 compose 只起 MySQL + Redis，不自动播种）
+#    完整清单与导入顺序以 README.md「快速开始 → 2. 初始化数据库」为唯一权威，
+#    本文不复制一份（两处清单必然漂移）。命令形态：
+#      mysql -h 127.0.0.1 -uroot -ptest1234 jffast < sql/<清单里的文件>.sql
 ```
 
 ## 项目结构
@@ -189,7 +188,7 @@ jffast/
 │   ├── jffast-starter-excel/      Excel
 │   ├── jffast-starter-job/        定时任务
 │   ├── jffast-starter-flowable/   工作流
-│   ├── jffast-starter-social/     社交登录
+│   ├── jffast-starter-social/     社交账号绑定
 │   ├── jffast-starter-oauth2-client/  OAuth2 客户端
 │   └── jffast-starter-demo-mode/  演示模式（只读保护，默认关闭）
 ├── jffast-biz/              业务模块

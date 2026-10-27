@@ -71,9 +71,9 @@ class EndpointPermissionAnnotationTest {
         // ---- OAuth2 授权码流程回调：无法携带登录态，已在 jffast.security.auth-excludes 放行 ----
         WHITELIST.put("OAuth2ClientFlowController#*",
                 "authorize/callback 回调无法携带登录态，已在 jffast.security.auth-excludes 放行");
-        // ---- 社交登录：授权跳转匿名 + 个人绑定管理仅需登录态 ----
+        // ---- 社交账号绑定：授权跳转匿名 + 个人绑定管理仅需登录态 ----
         WHITELIST.put("SocialLoginController#*",
-                "authorize/callback 为登录前匿名跳转；bind/unbind/listBinds 是个人维度绑定管理，仅需登录态");
+                "authorize/callback 为绑定前匿名跳转；bind/unbind/listBinds 是个人维度绑定管理，仅需登录态");
         // ---- 本人自助功能：userId 取自登录态，不设权限码（普通用户也必须能用） ----
         WHITELIST.put("SysUserController#getLoginUserInfo", "本人信息，登录态即可");
         WHITELIST.put("SysUserController#updatePassword", "本人改密（内部强制 loginId + @RateLimit），登录态即可");
@@ -86,6 +86,10 @@ class EndpointPermissionAnnotationTest {
         WHITELIST.put("SysNotificationController#unreadCount", "本人通知未读角标，登录态即可");
         WHITELIST.put("SysNotificationController#userNotificationPage", "本人通知分页，登录态即可");
         WHITELIST.put("SysNotificationController#userNotifications", "本人通知列表，登录态即可");
+        // ---- 字典项查询：前端下拉框/单选组的基础取值接口 ----
+        WHITELIST.put("SysDictController#getByTypeCode",
+                "登录即可：字典项是全局只读基础数据，任何登录用户的下拉框都要用；"
+                        + "字典管理页（/page、增删改）仍走 system:dict:* 权限码");
         // ---- 已验签的服务间内部调用 ----
         // Sa-Token 注解鉴权必须先有登录会话，而服务间内部调用按设计没有会话；这些端点由
         // SaInterceptor 的 checkLogin（未登录直连 = 401）+ 内部共享密钥验签（伪造头验签不过
