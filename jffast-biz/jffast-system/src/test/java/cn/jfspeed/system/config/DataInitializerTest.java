@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package cn.jfspeed.config;
+package cn.jfspeed.system.config;
 
 import cn.jfspeed.common.core.config.JfFastSystemProperties;
 import cn.jfspeed.common.security.util.EncryptionUtil;
@@ -31,6 +31,9 @@ import static org.mockito.Mockito.*;
 
 /**
  * DataInitializer 测试：管理员初始密码仅在仍为明文默认值时被加密重置。
+ * <p>
+ * 与 {@link DataInitializer} 同住 {@code jffast-system}——测试跟着被测类走，否则被测类搬走后
+ * 这里会在编译期就断掉。
  *
  * @author jffast
  */
@@ -90,5 +93,41 @@ class DataInitializerTest {
         initializer.run();
 
         verify(sysUserService, never()).updateById(any());
+    }
+
+    @Test
+    @DisplayName("口令等于公开测试值时照常初始化（只打 WARN，不拒绝启动）")
+    void shouldStillInitializeWhenPasswordIsThePublicTestValue() {
+        // 公开测试值是各栈 yml 里 init-password 的开箱即用默认值，识别它只是为了打 WARN，
+        // 绝不能因为它而跳过初始化——否则 admin 会永远停在占位值 "admin" 上。
+        when(systemProperties.getInitPassword()).thenReturn("test1234");
+        when(systemProperties.getPublicTestPassword()).thenReturn("test1234");
+        SysUser admin = new SysUser();
+        admin.setUserName("admin");
+        admin.setPassword("admin");
+        when(chain.one()).thenReturn(admin);
+
+        initializer.run();
+
+        ArgumentCaptor<SysUser> captor = ArgumentCaptor.forClass(SysUser.class);
+        verify(sysUserService).updateById(captor.capture());
+        assertTrue(EncryptionUtil.verifyPassword("test1234", captor.getValue().getPassword()));
+    }
+
+    @Test
+    @DisplayName("未配置公开测试值时不做该判断，且仍能正常初始化")
+    void shouldInitializeWhenPublicTestValueIsNotConfigured() {
+        // publicTestPassword 可被显式置空（表示「本栈没有公开示例值」），此时不得空指针
+        when(systemProperties.getPublicTestPassword()).thenReturn(null);
+        SysUser admin = new SysUser();
+        admin.setUserName("admin");
+        admin.setPassword("admin");
+        when(chain.one()).thenReturn(admin);
+
+        initializer.run();
+
+        ArgumentCaptor<SysUser> captor = ArgumentCaptor.forClass(SysUser.class);
+        verify(sysUserService).updateById(captor.capture());
+        assertTrue(EncryptionUtil.verifyPassword("Init@123", captor.getValue().getPassword()));
     }
 }

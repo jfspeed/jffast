@@ -18,6 +18,9 @@ jffast:
     # ⚠️ 它随仓库公开——prod profile 已覆盖为必填（application-prod.yml 无默认值，
     #    缺 JFFAST_INIT_PASSWORD 直接启动失败），且使用该公开值初始化时启动日志会打 WARN。
     init-password: ${JFFAST_INIT_PASSWORD:test1234}
+    # 与上面开箱即用默认值同源：init-password 落到这个值时，DataInitializer 会打 WARN
+    # 提醒换掉（该值随仓库公开，不是密钥）。它必须与 init-password 的默认值保持一致。
+    public-test-password: ${JFFAST_PUBLIC_TEST_PASSWORD:test1234}
     task:
       # 异步导入导出线程池队列容量，必须大于 0，否则启动失败（SysTaskRunner 构造器校验）
       queue-capacity: 100

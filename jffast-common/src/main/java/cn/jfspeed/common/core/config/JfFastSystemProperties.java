@@ -32,6 +32,8 @@ import lombok.Data;
  * jffast:
  *   system:
  *     init-password: ${JFFAST_INIT_PASSWORD:}
+ *     # 与 init-password 的开箱即用默认值保持一致（Pro / Cloud 是 A@123456）
+ *     public-test-password: test1234
  * </pre>
  *
  * @author jffast
@@ -43,4 +45,15 @@ public class JfFastSystemProperties {
 
     /** 新建/重置用户时使用的初始密码；同时也是「新密码不得与初始密码相同」的比对基准。为空表示未配置 */
     private String initPassword;
+
+    /**
+     * 各栈 yml 里 {@code init-password} 的「开箱即用示例值」——它不是密钥，是随仓库公开、
+     * 任何人都能读到的填充值，用它初始化 admin 时必须打 WARN 提醒换掉。
+     * <p>
+     * 之所以是配置项而不是代码常量：单体栈的示例值是 {@code test1234}，Pro 与 Cloud 栈是
+     * {@code A@123456}（改常量就得为每个栈复制一份初始化逻辑，两份迟早漂移——这正是
+     * {@code DataInitializer} 从各可运行应用模块下移到本模块之前的状态）。现在逻辑只有一份，
+     * 差异留在各自 yml 的一行配置里。
+     */
+    private String publicTestPassword = "test1234";
 }

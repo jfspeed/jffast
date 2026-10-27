@@ -367,7 +367,7 @@ jffast (pom)
 | 主配置 | `jffast-boot/src/main/resources/application.yml` | 端口/开关/Quartz/sa-token |
 | 开发配置 | `jffast-boot/src/main/resources/application-dev.yml` | 数据源/RSA/环境变量 |
 | 父 POM / BOM | `pom.xml` / `jffast-bom/pom.xml` | 聚合与版本 |
-| 启动装配 | `jffast-boot/.../config/DataInitializer.java` | admin 密码初始化 |
+| 启动装配 | `jffast-biz/jffast-system/.../system/config/DataInitializer.java` | admin 密码初始化（住 system 模块，所有装 system 的栈共用这一份） |
 | 示例模板 | `jffast-biz/jffast-demo/.../` | 新模块参考 |
 | 编码规范（权威） | `docs/开发规范.md` | 后端全部规范 |
 | 前端指南 | 前端仓 `jffast-ui/docs/前端开发指南.md` | 前端交互规范 |
