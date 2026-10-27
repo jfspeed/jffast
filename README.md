@@ -110,7 +110,7 @@
 > **文件存储已知限制（jffast-starter-file）**：本地存储上传路径强制追加时间戳子目录（落盘路径不可精确预测，需要确定性路径请自建 `XxxFileService`）；`delete()` 仅支持单文件；本地存储根目录 `jffast.file.storage.local.path` 同时决定上传根与 `/upload/**` 静态映射，两处必须一致，改配置时请整体替换。
 > 另有一条**安全边界**要记住：`/upload/**` 在免登录白名单里，所以存储根内的每个文件都对外公开可下载（这是「头像/附件要能被 `<img>` 直接引用」的代价）。因此服务端生成的敏感文件（如异步导出的用户表格）必须写在根目录之外——`jffast.system.task.file-dir` 默认 `./task-files`，配成根内子目录会启动失败。
 >
-> **数据权限 / 社交登录边界（Base）**：Base 内置 **5 级**数据权限（全部 / 本级及下 / 本级 / 仅本人 / 自定义，`@DataPermission` 注解触发；拦截器由 `jffast.mybatis.data-scope.enabled` 控制，缺省即装配）与 GitHub/Gitee/Microsoft 个人 OAuth2 登录。
+> **数据权限 / 社交账号绑定边界（Base）**：Base 内置 **5 级**数据权限（全部 / 本级及下 / 本级 / 仅本人 / 自定义，`@DataPermission` 注解触发；拦截器由 `jffast.mybatis.data-scope.enabled` 控制，缺省即装配）与 GitHub/Gitee/Microsoft 个人 OAuth2 **账号绑定**（授权跳转 / 回调 / 绑定 / 解绑已内置；本框架不提供「凭社交账号直接登录」——那一步需要你在绑定关系之上自行签发会话）。
 >
 > **异步任务结果文件（单实例）**：导入导出任务的中间文件写在**文件存储根之外**的工作目录 `./task-files`（`jffast.system.task.file-dir`，可经 `JFFAST_TASK_FILE_DIR` 覆盖）——存储根经 `/upload/**` 免登录静态映射，敏感产物落在里面等于公开下载，配错会启动失败。任务归属按 `create_by` 隔离。默认形态只适用于**单实例**：多实例部署必须把该目录挂成共享卷或改用对象存储，否则在另一实例下载会返回「文件不存在或已清理」。
 
@@ -178,8 +178,8 @@ jffast/
 │   │   ├── Flowable 8 引擎        BPMN 2.0 流程引擎
 │   │   ├── FlowService            门面封装 Repository/Runtime/Task/History
 │   │   └── AssigneeResolver       审批人解析 SPI 接口
-│   └── jffast-starter-social/     社交登录 Starter
-│       └── OAuth2                GitHub/Gitee/Microsoft 第三方登录
+│   └── jffast-starter-social/     社交账号绑定 Starter
+│       └── OAuth2                GitHub/Gitee/Microsoft 第三方账号绑定（授权/回调/绑定，不含直接登录）
 │   └── jffast-starter-oauth2-client/  OAuth2 客户端 Starter
 │       └── 调用第三方                client_credentials/authorization_code + 内置 GitHub/Gitee/Microsoft
 │   └── jffast-starter-demo-mode/  演示模式 Starter
@@ -249,6 +249,9 @@ docker compose up -d
 
 ### 2. 初始化数据库
 
+下面 14 条 `SOURCE` 行**按行序即清单序号 1–14**（`--` 注释掉的一条是可选功能，仍占它的序号，只是默认不执行）。
+本仓其它文档与 Docker 编排引用「清单序号」「预留号 09–14」时一律按这个编号，不要再另立一套序号。
+
 ```sql
 -- 创建数据库
 CREATE DATABASE jffast DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci;
@@ -285,7 +288,7 @@ SOURCE sql/sys_notification_template.sql;
 -- 导入工作流业务表（流程分类/流程定义业务扩展等，使用「工作流」功能时必须导入）
 SOURCE sql/flow_sql.sql;
 
--- （可选）社交登录绑定表，仅使用社交登录功能时需要
+-- （可选）社交账号绑定表，仅使用社交账号绑定功能时需要
 -- SOURCE sql/social_bind.sql;
 
 -- （可选）示例模块表，仅使用「示例管理」(demo) 功能时需要
@@ -311,7 +314,7 @@ SOURCE sql/ai_knowledge.sql;
 > - `flowable_schema/flowable_mysql_all.sql`：Flowable 工作流引擎表（**必须导入**，且要在首次启动前导入）。引擎启动即初始化，而它判断「schema 已存在」时**忽略当前库**：同一 MySQL 实例里任意库有 `ACT_GE_PROPERTY` 就走 `upgrade` 分支，本库缺表即以 `Table 'xxx.act_ge_property' doesn't exist` 启动失败 —— 与是否真用到工作流无关；显式导入后与库名、同实例其他库都无关。⚠️ 本文件为逐条 `create table`（非幂等），引擎已自建过表的库不要再导入
 > - `system_init_data.sql`：**系统模块**的初始数据（默认账号 admin、菜单、角色、字典等；初始密码见下方「安全提示」）；⚠️ **示例模块**的菜单与示例任务在 `demo_init_data.sql`（可选执行）
 > - `flow_sql.sql`：工作流业务表（`wf_*`：流程分类等），与 Flowable 引擎表配套使用
-> - `social_bind.sql`：社交登录绑定表（使用 GitHub/Gitee 登录时需要）
+> - `social_bind.sql`：社交账号绑定表（使用 GitHub/Gitee/Microsoft 账号绑定功能时需要）
 > - `demo_example.sql`：示例模块表（使用「示例管理」功能时需要），已统一放到顶层 `sql/` 目录
 > - `demo_leave_application.sql`：请假申请示例表
 > - `demo_init_data.sql`：示例模块菜单（200-215）+ **两条默认暂停（`status=0`）** 的示例定时任务（调用目标 `demoJobService.*`，其 Bean 在 `jffast-demo` 模块里）；不需要示例模块可不导入
@@ -478,12 +481,14 @@ mvn clean package -DskipTests
 
 ```bash
 mysql -uroot -p -e "CREATE DATABASE IF NOT EXISTS jffast DEFAULT CHARACTER SET utf8mb4;"
-mysql -uroot -p jffast < sql/system_sql.sql
-mysql -uroot -p jffast < sql/system_init_data.sql
-# 必须导入（首次启动前）：sql/flowable_schema/flowable_mysql_all.sql
-#   —— 引擎启动即初始化；同实例别的库带 ACT_* 时它不会自建表，缺表即启动失败
-# 工作流业务表（用到工作流时再导入）：sql/flow_sql.sql
+# 导入清单与顺序 = 上方「快速开始 → 2. 初始化数据库」（唯一权威，此处不复制第二份）
+#   命令形态：mysql -uroot -p jffast < sql/<清单里的文件>.sql
 ```
+
+> 两条容易漏的（同上方清单里的注释，这里只重述后果）：
+> `flowable_schema/flowable_mysql_all.sql` **必须在首次启动前导入**（同实例别的库带 `ACT_*` 时引擎不会自建表，缺表即启动失败）；
+> `sys_post.sql` / `sys_task.sql` / `sys_file.sql` / `sys_notification_template.sql` 各自带表与菜单种子，
+> 只导 `system_init_data.sql` 拿不到前三者的菜单，缺表会在点开菜单时报 `Unknown table`。
 
 **3）启动**
 
@@ -560,6 +565,43 @@ spring:
     auto-startup: true
     overwrite-existing-jobs: true
 ```
+
+### 社交账号绑定（可选）
+
+社交账号绑定 Starter 默认关闭。开启前需要先在第三方平台（GitHub / Gitee …）登记回调地址：
+
+```yaml
+jffast:
+  social:
+    enabled: true
+    # 为空时由各平台的 client-secret 派生；多实例部署请显式配成同一个值
+    state-secret: ${JFFAST_SOCIAL_STATE_SECRET:}
+    providers:
+      github:
+        client-id: ${GITHUB_CLIENT_ID:}
+        client-secret: ${GITHUB_CLIENT_SECRET:}
+        redirect-uri: ${GITHUB_REDIRECT_URI:http://localhost:7201/social/callback}
+      gitee:
+        client-id: ${GITEE_CLIENT_ID:}
+        client-secret: ${GITEE_CLIENT_SECRET:}
+        redirect-uri: ${GITEE_REDIRECT_URI:http://localhost:7201/social/callback}
+```
+
+**`redirect-uri` 填前端地址，不是后端接口地址。** 授权码只能用一次、且必须由后端兑换成
+access_token，所以完整链路是：
+
+1. 前端调 `GET /social/authorize?provider=github` 拿到授权链接，弹窗打开；
+2. 用户在第三方平台授权，平台按 `redirect-uri` 回跳到前端中转页 `/social/callback`；
+3. 中转页把 `code` / `state` 用 `postMessage` 交回发起绑定的那个同源窗口；
+4. 该窗口调 `GET /social/callback?code=&state=` 由后端兑换，拿到一次性绑定票据；
+5. 再调 `POST /social/bind` 提交票据，绑定到当前登录用户。
+
+第 3 步的 `targetOrigin` 取中转页自身的 origin，所以只有与本应用同源的窗口能拿到授权码，
+第三方页面即使把中转页开成自己的子窗口也取不到。平台标识（provider）由服务端从**签名 state**
+里解码得到，回跳地址不需要（也不应该）带 provider 参数。
+
+> 前端是 history 路由，部署时需要把 `/social/callback` 回退到 `index.html`
+> （仓内 nginx 模板已包含该规则）。
 
 ### CRUD 开发约定
 
@@ -831,4 +873,4 @@ defineExpose({ open, setData });
 | ------------------------------ | --------------- | ---------- |
 | [jffast-ui](https://github.com/summerZstar/jffast-ui) | Base 前端 | Apache 2.0 |
 
-开发约定、命名规范与完整示例（Entity/Service/Controller/DTO/VO、注解、异常码、Starter 开发、数据库、测试、代码生成器）详见 [后端开发规范](docs/开发规范.md)；前端交互（Monorepo、CRUD 工厂、组件/Hooks、权限指令、i18n）详见 [前端开发指南](docs/前端开发指南.md)。
+开发约定、命名规范与完整示例（Entity/Service/Controller/DTO/VO、注解、异常码、Starter 开发、数据库、测试、代码生成器）详见 [后端开发规范](docs/开发规范.md)；前端交互（Monorepo、CRUD 工厂、组件/Hooks、权限指令、i18n）详见前端仓 [jffast-ui 前端开发指南](https://github.com/summerZstar/jffast-ui/blob/master/docs/%E5%89%8D%E7%AB%AF%E5%BC%80%E5%8F%91%E6%8C%87%E5%8D%97.md)。

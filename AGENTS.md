@@ -55,7 +55,7 @@
 |----------|--------------|
 | 新增 / 修改 / 删除功能模块 | `docs/{功能}.md` + `README.md` + 使用者文档对应页面 |
 | 新增 / 修改模块或依赖组件 | `docs/开发规范.md` + `docs/{模块}.md` + `README.md` + 使用者文档对应页面 |
-| 新增 / 修改前端包或路径别名 | `docs/前端开发指南.md` + `README.md` |
+| 新增 / 修改前端包或路径别名 | 前端仓 `jffast-ui/docs/前端开发指南.md` + 前端仓 `README.md` |
 | 修改技术栈版本 / 环境路径 / 仓库结构 / Git 策略 | 本文件 `AGENTS.md` |
 | 修改 API 路径 / 分页 / 注解约定 | `docs/开发规范.md` |
 | 影响 AI 判断的变更（模块、端口、技术栈） | 本文件 `AGENTS.md` |
@@ -294,7 +294,7 @@ jffast/                      ← 后端 Base 根（父 POM，packaging=pom，ver
 | Starter | `jffast-starter-log` | @SLog 操作日志 |
 | Starter | `jffast-starter-file` | 本地/MinIO 文件存储 |
 | Starter | `jffast-starter-excel` | FastExcel 导入导出 |
-| Starter | `jffast-starter-social` | OAuth2 社交登录 |
+| Starter | `jffast-starter-social` | OAuth2 社交账号绑定（授权/回调/绑定，不签发登录 Token） |
 | Starter | `jffast-starter-job` | Quartz 定时任务 + @JfFastJob |
 | Starter | `jffast-starter-flowable` | Flowable 8 工作流引擎 |
 | Starter | `jffast-starter-oauth2-client` | OAuth2 授权码客户端（默认 Redis 令牌缓存） |
@@ -336,7 +336,7 @@ jffast (pom)
 | 主题 | 位置 |
 |------|------|
 | 编码规范（权威） | `docs/开发规范.md` |
-| 前端指南 | `docs/前端开发指南.md` |
+| 前端指南 | 前端仓 `jffast-ui/docs/前端开发指南.md` |
 | 工作流 | `docs/flowable.md` |
 | 限流 | `docs/api-rate-limiting.md` |
 | 演示模式 | `docs/demo-mode.md` |
@@ -370,7 +370,7 @@ jffast (pom)
 | 启动装配 | `jffast-boot/.../config/DataInitializer.java` | admin 密码初始化 |
 | 示例模板 | `jffast-biz/jffast-demo/.../` | 新模块参考 |
 | 编码规范（权威） | `docs/开发规范.md` | 后端全部规范 |
-| 前端指南 | `docs/前端开发指南.md` | 前端交互规范 |
+| 前端指南 | 前端仓 `jffast-ui/docs/前端开发指南.md` | 前端交互规范 |
 | 部署 | `deploy/README.md` + `deploy/helm/` | 后端镜像 `jffast-boot`（`jffast-boot/Dockerfile`）；前端镜像在 jffast-ui 仓库，两者独立编排 |
 
 ## 六、常见坑与已知限制（源码核验过）
