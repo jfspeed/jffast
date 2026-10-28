@@ -15,8 +15,11 @@
  */
 package cn.jfspeed.system.mapper;
 
+import com.baomidou.mybatisplus.annotation.InterceptorIgnore;
+
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
+import org.apache.ibatis.annotations.Select;
 
 /**
  * 社交账号绑定表（{@code sys_social_bind}）的删除操作。
@@ -34,4 +37,25 @@ public interface SysSocialBindMapper {
      * 删除指定用户的全部社交账号绑定；表未导入时由调用方按开关跳过，不在此兜底
      */
     int deleteByUserId(@Param("userId") Long userId);
+
+    /**
+     * {@code sys_social_bind} 是否已导入（该表由**可选**脚本 {@code sql/social_bind.sql} 创建，
+     * 不在 {@code sql/system_sql.sql} 里）。返回 0 = 表不存在。
+     *
+     * <p>为什么需要：{@code jffast.social.enabled=true} 只说明部署方想用社交功能，
+     * 并不能证明他导了那张可选脚本。表不存在时无条件 DELETE 会让删号直接 500。
+     *
+     * <p>为什么必须显式 {@code @InterceptorIgnore(tenantLine = "true")}：本查询打在
+     * {@code information_schema.tables} 上，而租户拦截器按**末段表名**判断是否豁免
+     * （它收到的是 {@code tables}，不是 {@code information_schema.tables}），因而不会豁免，
+     * 会给它追加 {@code AND tenant_id = 1} —— {@code information_schema.tables} 没有该列，
+     * 数据库直接报 {@code Unknown column 'tenant_id'}，删号接口整体 500。
+     * 探表语句本身与租户无关（问的是「这张表在不在」），必须声明不被改写。
+     *
+     * <p>{@code dataPermission = "true"} 同理：数据范围只针对业务数据行，元数据查询不受它约束。
+     */
+    @InterceptorIgnore(tenantLine = "true", dataPermission = "true")
+    @Select("SELECT COUNT(1) FROM information_schema.tables "
+            + "WHERE table_schema = DATABASE() AND table_name = 'sys_social_bind'")
+    int countSocialBindTable();
 }

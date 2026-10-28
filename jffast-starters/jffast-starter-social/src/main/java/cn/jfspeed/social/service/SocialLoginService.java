@@ -143,13 +143,12 @@ public class SocialLoginService {
         // 出参侧再过一次白名单：state 虽由服务端签发，但回显给前端的地址必须始终是站内相对路径
         result.setTargetUri(sanitizeTargetUri(socialState.getTargetUri()));
 
+        // 只回「是否已绑定」，**不回吐绑定对象的 userId**。
+        // 该社交号若已绑到他人账号，回吐其 userId 等于交给调用方一个可枚举的系统用户标识
+        // （回调端点对任何登录用户可达）；而回调此刻只需要让前端知道「这台设备拿到的社交号
+        // 已经有主」，真正的归属判定在 /social/bind（票据归属 + 已绑归属双重校验）。
         SocialBind existBind = findByProviderAndOpenId(socialState.getProvider().toLowerCase(), socialUser.getOpenId());
-        if (existBind != null) {
-            result.setBound(true);
-            result.setUserId(existBind.getUserId());
-        } else {
-            result.setBound(false);
-        }
+        result.setBound(existBind != null);
 
         return result;
     }
@@ -164,7 +163,9 @@ public class SocialLoginService {
         }
 
         SocialBindTicket bindTicket = SocialBindTicket.decode(ticket, resolveStateSecret());
-        if (bindTicket.getUserId() != null && !bindTicket.getUserId().equals(user.getId())) {
+        // 票据必须带 userId 且等于当前登录用户：null 一律拒绝。
+        // 反过来写（null 即跳过）会让「不写 userId 的票据」静默放行 —— 归属校验形同虚设。
+        if (bindTicket.getUserId() == null || !bindTicket.getUserId().equals(user.getId())) {
             throw new BusinessException(AuthErrorCode.FORBIDDEN.getCode(), "绑定票据与当前登录用户不匹配");
         }
 

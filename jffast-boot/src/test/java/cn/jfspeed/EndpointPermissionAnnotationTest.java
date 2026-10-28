@@ -73,7 +73,10 @@ class EndpointPermissionAnnotationTest {
                 "authorize/callback 回调无法携带登录态，已在 jffast.security.auth-excludes 放行");
         // ---- 社交账号绑定：授权跳转匿名 + 个人绑定管理仅需登录态 ----
         WHITELIST.put("SocialLoginController#*",
-                "authorize/callback 为绑定前匿名跳转；bind/unbind/listBinds 是个人维度绑定管理，仅需登录态");
+                "authorize 是绑定前的匿名跳转（跳第三方授权页，尚未绑定）；"
+                        + "callback 兑换授权码**需要登录态**（第三方回跳到前端中转页，真正兑换的是发起绑定的已登录窗口，"
+                        + "匿名放行等于把一张与用户无关的绑定票据发给任何拿到 code+state 的人）；"
+                        + "bind/unbind/listBinds 是个人维度绑定管理，仅需登录态");
         // ---- 本人自助功能：userId 取自登录态，不设权限码（普通用户也必须能用） ----
         WHITELIST.put("SysUserController#getLoginUserInfo", "本人信息，登录态即可");
         WHITELIST.put("SysUserController#updatePassword", "本人改密（内部强制 loginId + @RateLimit），登录态即可");

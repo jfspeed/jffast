@@ -85,7 +85,8 @@ public class SysUserService extends BaseService<SysUserMapper, SysUser>{
      * 社交账号绑定开关（与 {@code JfFastSocialAutoConfiguration} 同一属性）。
      * <p>
      * {@code sys_social_bind} 由**可选**脚本 {@code sql/social_bind.sql} 创建，未启用社交功能时
-     * 表可能根本不存在；此时无条件 DELETE 会让删号直接 500。启用即代表部署方已导入该脚本。
+     * 表可能根本不存在；开了开关也不等于导了那张脚本，故删号前还会探一次表存在性
+     * （{@link SysSocialBindMapper#countSocialBindTable()}），不存在就跳过清理，避免删号 500。
      */
     @Value("${jffast.social.enabled:false}")
     private boolean socialEnabled;
@@ -257,10 +258,14 @@ public class SysUserService extends BaseService<SysUserMapper, SysUser>{
      * <p>{@code sys_social_bind} 必须一起清：唯一键 {@code uk_provider_openid} 是
      * {@code (provider, open_id)}，行留着就永久占位——被删用户的社交账号既绑不到新账号，
      * 也无法再绑回自己，只能手工删库把行清掉。
+     *
+     * <p>但该表由**可选**脚本 {@code sql/social_bind.sql} 创建（不在 {@code system_sql.sql} 里）：
+     * 开了 {@code jffast.social.enabled} 不等于导了那张脚本，表不存在时无条件 DELETE
+     * 会让删号直接 500。故先探表存在性，不存在就跳过清理（此时本仓本就没有绑定数据可清）。
      */
     @Transactional(rollbackFor = Exception.class)
     public void deleteUser(Long userId) {
-        if (socialEnabled) {
+        if (socialEnabled && sysSocialBindMapper.countSocialBindTable() > 0) {
             sysSocialBindMapper.deleteByUserId(userId);
         }
 

@@ -88,15 +88,30 @@ class SysUserDeleteCleanupTest {
     }
 
     @Test
-    @DisplayName("启用社交功能时：删号同时清 sys_social_bind")
+    @DisplayName("启用社交功能且表已导入时：删号同时清 sys_social_bind")
     void deletesSocialBindsWhenSocialEnabled() {
         ReflectionTestUtils.setField(service, "socialEnabled", true);
+        when(sysSocialBindMapper.countSocialBindTable()).thenReturn(1);
 
         service.deleteUser(9L);
 
         verify(sysSocialBindMapper).deleteByUserId(9L);
         verify(sysUserRoleMapper).delete(any());
         verify(sysUserDeptMapper).delete(any());
+        verify(baseMapper).deleteById(9L);
+    }
+
+    @Test
+    @DisplayName("启用社交功能但表未导入时：跳过清理，删号照常成功（不得 500）")
+    void skipsSocialBindsWhenTableNotImported() {
+        // sys_social_bind 由可选脚本 sql/social_bind.sql 创建，不在 system_sql.sql 里：
+        // 开了 jffast.social.enabled 不等于导了那张脚本，表不存在时无条件 DELETE 会让删号 500。
+        ReflectionTestUtils.setField(service, "socialEnabled", true);
+        when(sysSocialBindMapper.countSocialBindTable()).thenReturn(0);
+
+        service.deleteUser(9L);
+
+        verify(sysSocialBindMapper, never()).deleteByUserId(anyLong());
         verify(baseMapper).deleteById(9L);
     }
 
@@ -108,6 +123,7 @@ class SysUserDeleteCleanupTest {
         service.deleteUser(9L);
 
         verify(sysSocialBindMapper, never()).deleteByUserId(anyLong());
+        verify(sysSocialBindMapper, never()).countSocialBindTable();
         verify(baseMapper).deleteById(9L);
     }
 

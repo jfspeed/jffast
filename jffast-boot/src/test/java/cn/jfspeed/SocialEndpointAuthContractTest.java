@@ -22,6 +22,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -29,6 +30,9 @@ import cn.jfspeed.social.controller.SocialLoginController;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.http.server.PathContainer;
+import org.springframework.web.util.pattern.PathPattern;
+import org.springframework.web.util.pattern.PathPatternParser;
 import org.yaml.snakeyaml.Yaml;
 
 /**
@@ -100,6 +104,43 @@ class SocialEndpointAuthContractTest {
                 "/social/binds 是登录后的个人绑定查询，必须仍受登录态保护");
         assertFalse(excludes.stream().anyMatch(p -> p.startsWith("/social/unbind")),
                 "/social/unbind/** 是登录后的个人解绑操作，必须仍受登录态保护");
+    }
+
+    /**
+     * 字面集合断言挡不住**通配变体**：上面几条只查 {@code contains("/social/**")} 这类精确写法，
+     * 而放行清单里的条目是按 Spring 的路径匹配（{@code excludePathPatterns} → PathPattern）生效的，
+     * 于是 {@code /social/*}（单星：覆盖 /social/callback、/social/bind、/social/binds）
+     * 与 {@code /social/**}（双星）都能让这些端点匿名化，却一个字面断言都碰不到。
+     *
+     * <p>这里按运行时同款匹配语义逐条判定：任何放行写法都不得命中下面这些必须登录的端点。
+     */
+    @Test
+    @DisplayName("任何通配写法都不得覆盖到需要登录态的社交端点")
+    void noAuthExcludePatternCoversProtectedSocialEndpoints() throws IOException {
+        List<String> excludes = authExcludes();
+        List<String> protectedPaths = List.of(
+                "/social/callback",
+                "/social/bind",
+                "/social/binds",
+                "/social/unbind/github");
+
+        PathPatternParser parser = PathPatternParser.defaultInstance;
+        List<String> hits = new ArrayList<>();
+        for (String exclude : excludes) {
+            PathPattern pattern;
+            try {
+                pattern = parser.parse(exclude);
+            } catch (RuntimeException e) {
+                continue;   // 解析不了的写法不参与判定（写法合法性由 Spring 启动期兜底）
+            }
+            for (String protectedPath : protectedPaths) {
+                if (pattern.matches(PathContainer.parsePath(protectedPath))) {
+                    hits.add(exclude + " → " + protectedPath);
+                }
+            }
+        }
+        assertTrue(hits.isEmpty(),
+                "以下免登录写法覆盖到了必须登录的社交端点（单星 / 双星变体也算）：" + hits + "；实际：" + excludes);
     }
 
     @Test

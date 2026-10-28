@@ -42,7 +42,7 @@ public class SocialLoginResult {
     @Schema(title = "是否已绑定系统账号")
     private Boolean bound;
 
-    @Schema(title = "绑定的系统用户ID（已绑定时返回）")
+    @Schema(title = "绑定的系统用户ID（不再回吐：回调只返回 bound，归属判定在 /social/bind）")
     private Long userId;
 
     @Schema(title = "认证成功后前端跳转地址")
