@@ -10,7 +10,7 @@
     <packaging>pom</packaging>
     <name>jffast</name>
     <description>jffast: A pluggable rapid development framework based on Spring Boot</description>
-    <url>https://github.com/summerZstar/jffast</url>
+    <url>https://github.com/jfspeed/jffast</url>
 
     <licenses>
         <license>
@@ -24,14 +24,14 @@
         <developer>
             <id>jffast</id>
             <name>jffast Team</name>
-            <url>https://github.com/summerZstar</url>
+            <url>https://github.com/jfspeed</url>
         </developer>
     </developers>
 
     <scm>
-        <url>https://github.com/summerZstar/jffast</url>
-        <connection>scm:git:git://github.com/summerZstar/jffast.git</connection>
-        <developerConnection>scm:git:ssh://github.com/summerZstar/jffast.git</developerConnection>
+        <url>https://github.com/jfspeed/jffast</url>
+        <connection>scm:git:git://github.com/jfspeed/jffast.git</connection>
+        <developerConnection>scm:git:ssh://github.com/jfspeed/jffast.git</developerConnection>
     </scm>
 
     <modules>
@@ -286,11 +286,11 @@
             <distributionManagement>
                 <repository>
                     <id>github</id>
-                    <url>https://maven.pkg.github.com/summerZstar/jffast</url>
+                    <url>https://maven.pkg.github.com/jfspeed/jffast</url>
                 </repository>
                 <snapshotRepository>
                     <id>github</id>
-                    <url>https://maven.pkg.github.com/summerZstar/jffast</url>
+                    <url>https://maven.pkg.github.com/jfspeed/jffast</url>
                 </snapshotRepository>
             </distributionManagement>
         </profile>

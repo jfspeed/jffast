@@ -24,7 +24,7 @@
 
 ## 执行
 
-如遇到不可接受的行为，请通过 [GitHub Issues](https://github.com/summerZstar/jffast/issues) 或仓库维护者渠道报告。所有投诉将被审查与调查，并将按需采取必要措施。维护者有义务保护报告者及其相关方的隐私。
+如遇到不可接受的行为，请通过 [GitHub Issues](https://github.com/jfspeed/jffast/issues) 或仓库维护者渠道报告。所有投诉将被审查与调查，并将按需采取必要措施。维护者有义务保护报告者及其相关方的隐私。
 
 滥用、骚扰或其他不可接受行为的实施者可能被临时或永久禁止参与本项目。
 

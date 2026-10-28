@@ -6,18 +6,18 @@ description: |
 type: application
 version: 1.0.0
 appVersion: "1.0.0"
-home: https://github.com/summerZstar/jffast
+home: https://github.com/jfspeed/jffast
 sources:
-  - https://github.com/summerZstar/jffast
+  - https://github.com/jfspeed/jffast
 maintainers:
   - name: jffast
-    url: https://github.com/summerZstar/jffast
+    url: https://github.com/jfspeed/jffast
 keywords:
   - jffast
   - spring-boot
   - admin
   - framework
-icon: https://raw.githubusercontent.com/summerZstar/jffast-ui/master/public/img/logo.png
+icon: https://raw.githubusercontent.com/jfspeed/jffast-ui/master/public/img/logo.png
 dependencies:
   - name: mysql
     version: "11.1.2"

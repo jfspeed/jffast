@@ -6,7 +6,7 @@
 
 ### 报告 Bug
 
-如果您发现了 Bug，请通过 [GitHub Issues](https://github.com/summerZstar/jffast/issues) 报告，并包含以下信息：
+如果您发现了 Bug，请通过 [GitHub Issues](https://github.com/jfspeed/jffast/issues) 报告，并包含以下信息：
 
 1. **环境信息**
    - JDK 版本
@@ -25,7 +25,7 @@
 
 ### 提交建议
 
-功能建议同样通过 [GitHub Issues](https://github.com/summerZstar/jffast/issues) 提交，请说明：
+功能建议同样通过 [GitHub Issues](https://github.com/jfspeed/jffast/issues) 提交，请说明：
 
 - 建议的功能描述
 - 使用场景
@@ -242,9 +242,9 @@ jffast/
 
 ## 获取帮助
 
-- **文档**：[README](README.md) 与 [docs/ 目录](https://github.com/summerZstar/jffast/tree/master/docs)（独立文档站尚未上线）
-- **Issues**：[GitHub Issues](https://github.com/summerZstar/jffast/issues)
-- **讨论**：[GitHub Discussions](https://github.com/summerZstar/jffast/discussions)
+- **文档**：[README](README.md) 与 [docs/ 目录](https://github.com/jfspeed/jffast/tree/master/docs)（独立文档站尚未上线）
+- **Issues**：[GitHub Issues](https://github.com/jfspeed/jffast/issues)
+- **讨论**：[GitHub Discussions](https://github.com/jfspeed/jffast/discussions)
 
 ## 致谢
 

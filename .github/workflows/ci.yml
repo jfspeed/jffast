@@ -11,6 +11,26 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # 公开仓自查门禁：秒级、无依赖、不用密钥。
+  # 维护者本机的提交钩子读的清单不在本仓库内，拦不住网页端直接提交、绕过钩子的推送，
+  # 也拦不住从别人堆栈里粘进来的本机路径——这一段是那道门禁里可以公开的部分。
+  hygiene:
+    name: Public hygiene
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      # 阳性对照：一个从不证明自己能报错的门禁，等于没有门禁
+      - name: Self-test
+        run: python .github/scripts/public-hygiene.py --self-test
+
+      - name: Scan tracked files
+        run: python .github/scripts/public-hygiene.py
+
   backend:
     name: Base Backend Build & Test
     runs-on: ubuntu-latest

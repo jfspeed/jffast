@@ -13,7 +13,7 @@
 
 请**不要**通过公开 GitHub Issue 报告安全漏洞。
 
-请使用 [GitHub Security Advisories](https://github.com/summerZstar/jffast/security/advisories/new) 提交私密报告（需在仓库 Settings → Security 打开 "Private vulnerability reporting"）。本仓库不设邮箱渠道——写死的邮件地址一旦域名失效，上报就会石沉大海，而 GitHub 私密报告有送达记录。
+请使用 [GitHub Security Advisories](https://github.com/jfspeed/jffast/security/advisories/new) 提交私密报告（需在仓库 Settings → Security 打开 "Private vulnerability reporting"）。本仓库不设邮箱渠道——写死的邮件地址一旦域名失效，上报就会石沉大海，而 GitHub 私密报告有送达记录。
 
 报告请包含：
 
