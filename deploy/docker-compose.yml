@@ -60,10 +60,12 @@ services:
       #   sql/ 下还有 quartz.sql 等不在清单里的脚本，整目录挂进去会被 initdb 全量执行
       #   （且按文件名排序，不等于依赖顺序）。这里用文件级挂载 + 数字前缀显式定序。
       #
-      # 默认全量（2026-10-29 定案，与 README「13 条默认执行」对齐；此前只挂 01–08）：
-      #   README 里示例模块与 AI 知识库的建表行本来就是**默认执行**，Docker 不该另立一套精简口径。
-      #   不需要这些模块的部署把 09–14 对应行注释掉即可（注释不影响其余编号与顺序）。
-      #   实测规模：8 条 → 80 表 / 107 菜单；14 条 → 89 表 / 142 菜单（ACT_* 39 张两者相同）。
+      # 默认执行 = README 的「13 条」（14 条里只有 social_bind.sql 被 `--` 注释）。
+      #   2026-10-29 定案：此前只挂 01–08，与 README 默认执行口径不一致（少 4 张 demo 表 + 5 张 AI 表
+      #   + 2 段菜单种子 + 1 个示例任务，L1 从 20/20 退化为 14/6），现补到 README 的默认 13 条；
+      #   不需要示例模块 / AI 知识库的部署，把 10–14 对应行注释掉即可（注释不影响其余编号与顺序）。
+      #   实测规模：8 条 → 80 表 / 107 菜单；13 条 → 88 表 / 142 菜单（ACT_* 39 张各档相同）；
+      #   若连 social_bind 也放开（09）则是 89 表。
       #   ⚠ 02-flowable 也必须默认挂载，原因见下：
       #     本容器卷为空时引擎会自建 ACT_*，看似可以不挂；但该 MySQL **实例上已有别的库带 ACT_*** 时
       #     （引擎判断「schema 已存在」时忽略当前库）会走 upgrade 分支、本库没表 → 启动即报
@@ -81,7 +83,8 @@ services:
       - ../sql/sys_file.sql:/docker-entrypoint-initdb.d/06-sys_file.sql:ro
       - ../sql/sys_notification_template.sql:/docker-entrypoint-initdb.d/07-sys_notification_template.sql:ro
       - ../sql/flow_sql.sql:/docker-entrypoint-initdb.d/08-flow_sql.sql:ro
-      - ../sql/social_bind.sql:/docker-entrypoint-initdb.d/09-social_bind.sql:ro
+      # 09 = README 里被 `--` 注释的那条可选行：需要社交账号绑定功能时再放开。
+      # - ../sql/social_bind.sql:/docker-entrypoint-initdb.d/09-social_bind.sql:ro
       - ../sql/demo_example.sql:/docker-entrypoint-initdb.d/10-demo_example.sql:ro
       - ../sql/demo_leave_application.sql:/docker-entrypoint-initdb.d/11-demo_leave_application.sql:ro
       - ../sql/demo_tenant_example.sql:/docker-entrypoint-initdb.d/12-demo_tenant_example.sql:ro

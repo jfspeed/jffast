@@ -135,11 +135,13 @@ cp deploy/.env.example deploy/.env     # 填 RSA 密钥对与 JFFAST_INIT_PASSWO
 docker compose -f deploy/docker-compose.yml --env-file deploy/.env up -d --build
 ```
 
-首次启动按 `deploy/docker-compose.yml` 的 `01`–`14` 自动播种。那份挂载序与仓根 README
+首次启动按 `deploy/docker-compose.yml` 的 `01`–`14` 自动播种，与仓根 README
 「快速开始 → 2. 初始化数据库」SOURCE 列表（14 条，按行序即序号 1–14）**逐行同序**
-——编号 = 那份清单的行序序号。默认全量：示例模块、AI 知识库、社交绑定都在内
-（2026-10-29 与 README「13 条默认执行」对齐；此前只挂 01–08）。不需要这些可选模块的部署，
-把编排里 `09`–`14` 对应行注释掉即可，注释不影响其余编号与顺序。
+——编号 = 那份清单的行序序号。默认执行的是 README 的 **13 条**：示例模块与 AI 知识库都在内，
+唯一注释掉的是 `09 social_bind.sql`（README 里同样是 `--` 注释的可选行）。
+2026-10-29 起补齐到这里；此前只挂 01–08，同一句「照文档从零装」在 Docker 下会少 4 张 demo 表、
+5 张 AI 表、2 段菜单种子与 1 个示例任务。不需要示例模块 / AI 知识库的部署，
+把 `10`–`14` 对应行注释掉即可（注释不影响其余编号与顺序）。
 启动后访问：http://localhost:7200/jffast-api/swagger-ui.html
 
 > ⚠ **首启后必须核对播种真的跑完了。** MySQL 官方镜像的 initdb 是「任一脚本报错即中止」，
@@ -147,9 +149,9 @@ docker compose -f deploy/docker-compose.yml --env-file deploy/.env up -d --build
 > **跳过全部播种**。结果：`docker ps` 显示 healthy、healthcheck 也通过，但表/菜单缺失
 > （接口 500、登录后没有菜单）。
 >
-> **预期规模**：默认 `01`–`14` 播种完是 **89 张表 / 142 条菜单 / 39 张 `ACT_*`**；
-> 若把 `09`–`14` 注释掉再在空卷上重播，则是 **80 / 107 / 39**。数字对不上，基本就是某个脚本报错
-> 让整条链被跳过（`docker logs` 里能看到第一个 `ERROR`）。
+> **预期规模**：默认 13 条播种完是 **88 张表 / 142 条菜单 / 39 张 `ACT_*`**；
+> 放开 `09 social_bind.sql` 是 **89 / 142 / 39**；把 `10`–`14` 注释掉则是 **80 / 107 / 39**。
+> 数字对不上，基本就是某个脚本报错让整条链被跳过（`docker logs` 里能看到第一个 `ERROR`）。
 >
 > 核一眼就够：
 >
