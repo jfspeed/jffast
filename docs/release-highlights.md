@@ -1,6 +1,6 @@
 # 版本亮点 · jffast 1.1.0
 
-> 面向使用者与接入方：本包相对 1.0.0 的能力变化与选型价值。逐条变更见 [CHANGELOG.md](../CHANGELOG.md)，升级操作见 [release-info.md](../release-info.md)。
+> 面向使用者与接入方：本包相对 1.0.0 的能力变化与选型价值。逐条变更见 [CHANGELOG.md](../CHANGELOG.md)，升级操作见本文「升级须知」与「验证要点」。
 
 ## 一句话摘要
 
