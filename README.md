@@ -252,6 +252,9 @@ docker compose up -d
 下面 14 条 `SOURCE` 行**按行序即清单序号 1–14**（`--` 注释掉的一条是可选功能，仍占它的序号，只是默认不执行）。
 本仓其它文档与 Docker 编排引用「清单序号」「预留号 09–14」时一律按这个编号，不要再另立一套序号。
 
+> **执行口径**：14 条里**只有第 9 条 `social_bind.sql` 被 `--` 注释**（社交账号绑定，可选功能，默认不执行），其余各条**默认执行**。
+> 示例模块（`demo_example.sql` / `demo_leave_application.sql` / `demo_tenant_example.sql` / `demo_init_data.sql`）与 `ai_knowledge.sql` 属于「可选模块」，但它们的行没有 `--`，**导入时会照常执行**；不需要这些模块的部署自行把对应行注释掉即可（注释掉不影响清单序号）。
+
 ```sql
 -- 创建数据库
 CREATE DATABASE jffast DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci;
@@ -288,36 +291,37 @@ SOURCE sql/sys_notification_template.sql;
 -- 导入工作流业务表（流程分类/流程定义业务扩展等，使用「工作流」功能时必须导入）
 SOURCE sql/flow_sql.sql;
 
--- （可选）社交账号绑定表，仅使用社交账号绑定功能时需要
+-- 社交账号绑定表（**可选，默认不执行**：仅使用社交账号绑定功能时需要，去掉本行的 `--` 注释）
 -- SOURCE sql/social_bind.sql;
 
--- （可选）示例模块表，仅使用「示例管理」(demo) 功能时需要
+-- 示例模块表（**默认执行**；仅使用「示例管理」(demo) 功能时需要，不需要可自行注释掉本行）
 SOURCE sql/demo_example.sql;
 
--- （可选）请假申请示例表
+-- 请假申请示例表（**默认执行**；示例模块，不需要可自行注释掉本行）
 SOURCE sql/demo_leave_application.sql;
 
--- （可选）租户隔离示例表
+-- 租户隔离示例表（**默认执行**；示例模块，不需要可自行注释掉本行）
 SOURCE sql/demo_tenant_example.sql;
 
--- （可选）示例模块菜单 + 示例定时任务（两条都**默认暂停** status=0；
+-- 示例模块菜单 + 示例定时任务（**默认执行**；两条都**默认暂停** status=0；
 --    导入后到「系统管理 → 定时任务」点启用即可。不导入则前端没有「示例模块」目录）
 SOURCE sql/demo_init_data.sql;
 
--- （可选）AI 知识库模块表（AI 中心：知识库/文档/对话）
+-- AI 知识库模块表（AI 中心：知识库/文档/对话；**默认执行**，不需要可自行注释掉本行）
 SOURCE sql/ai_knowledge.sql;
 ```
 
 > **SQL 文件说明**：
 >
+> - **执行口径**：清单 14 条里只有 `social_bind.sql`（第 9 条）被 `--` 注释、**默认不执行**；其余各条**默认执行**。下面带「使用 X 功能时需要」字样的脚本说的是**功能依赖**，不代表默认不执行——不需要该功能的部署自行把清单里对应那一行注释掉即可（注释掉不改变清单序号）
 > - `system_sql.sql`：系统表结构 + Quartz 定时任务表
 > - `flowable_schema/flowable_mysql_all.sql`：Flowable 工作流引擎表（**必须导入**，且要在首次启动前导入）。引擎启动即初始化，而它判断「schema 已存在」时**忽略当前库**：同一 MySQL 实例里任意库有 `ACT_GE_PROPERTY` 就走 `upgrade` 分支，本库缺表即以 `Table 'xxx.act_ge_property' doesn't exist` 启动失败 —— 与是否真用到工作流无关；显式导入后与库名、同实例其他库都无关。⚠️ 本文件为逐条 `create table`（非幂等），引擎已自建过表的库不要再导入
-> - `system_init_data.sql`：**系统模块**的初始数据（默认账号 admin、菜单、角色、字典等；初始密码见下方「安全提示」）；⚠️ **示例模块**的菜单与示例任务在 `demo_init_data.sql`（可选执行）
+> - `system_init_data.sql`：**系统模块**的初始数据（默认账号 admin、菜单、角色、字典等；初始密码见下方「安全提示」）；⚠️ **示例模块**的菜单与示例任务在 `demo_init_data.sql`（默认执行）
 > - `flow_sql.sql`：工作流业务表（`wf_*`：流程分类等），与 Flowable 引擎表配套使用
-> - `social_bind.sql`：社交账号绑定表（使用 GitHub/Gitee/Microsoft 账号绑定功能时需要）
+> - `social_bind.sql`：社交账号绑定表（使用 GitHub/Gitee/Microsoft 账号绑定功能时需要；**清单里唯一默认不执行的一条**）
 > - `demo_example.sql`：示例模块表（使用「示例管理」功能时需要），已统一放到顶层 `sql/` 目录
 > - `demo_leave_application.sql`：请假申请示例表
-> - `demo_init_data.sql`：示例模块菜单（200-215）+ **两条默认暂停（`status=0`）** 的示例定时任务（调用目标 `demoJobService.*`，其 Bean 在 `jffast-demo` 模块里）；不需要示例模块可不导入
+> - `demo_init_data.sql`：示例模块菜单（200-215）+ **两条默认暂停（`status=0`）** 的示例定时任务（调用目标 `demoJobService.*`，其 Bean 在 `jffast-demo` 模块里）；不需要示例模块的部署可自行注释掉清单里这一行
 > - `sys_post.sql`：岗位管理表（`sys_post`）+ 菜单种子（页面 1012 / 按钮 2101-2104）；幂等脚本，新建库与存量库均执行
 > - `sys_task.sql`：异步任务表（`sys_task`，导入/导出任务进度与结果文件）+ 菜单种子（页面 1013 / 按钮 2201-2202）；幂等脚本，新建库与存量库均执行
 > - `sys_file.sql`：文件管理表（`sys_file`）+ 菜单种子（页面 1014 / 按钮 2301-2303）；上传由 `jffast-starter-file` 自动登记（历史文件不回填）；幂等脚本，新建库与存量库均执行
