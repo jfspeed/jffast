@@ -18,6 +18,7 @@ package cn.jfspeed.web.config;
 import cn.jfspeed.web.websocket.WebSocketHandshakeInterceptor;
 import cn.jfspeed.web.websocket.WebSocketEventHandler;
 import cn.jfspeed.web.websocket.WebSocketService;
+import java.util.Arrays;
 import java.util.List;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
@@ -70,14 +71,34 @@ public class WebSocketAutoConfiguration implements WebSocketConfigurer {
 
     @Override
     public void registerWebSocketHandlers(WebSocketHandlerRegistry registry) {
-        String[] allowedOrigins = properties.getAllowedOrigins().isEmpty()
-                ? new String[]{"*"}
-                : properties.getAllowedOrigins().split(",");
+        // 空 origins（= 同源白名单为空）并不等于「放行所有」：注册器无论如何都会装上
+        // OriginHandshakeInterceptor，它在「非同源」时才去看这张名单，名单为空 ⇒ 跨源一律 403。
+        // 这正是要的默认语义 —— 此前把空串映射成 "*"，等于默认向任意站点开放握手。
+        String[] allowedOrigins = parseAllowedOrigins(properties.getAllowedOrigins());
 
         registry.addHandler(webSocketService(), properties.getPath())
                 .addInterceptors(webSocketHandshakeInterceptor())
                 .setAllowedOrigins(allowedOrigins);
 
-        log.info("WebSocket 配置完成，路径: {}", properties.getPath());
+        log.info("WebSocket 配置完成，路径: {}，跨源放行策略: {}",
+                properties.getPath(), describeOrigins(allowedOrigins));
+    }
+
+    /** 逗号分隔 → 数组（去空白、丢空项）；未配置时返回空数组（仅同源）。 */
+    static String[] parseAllowedOrigins(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return new String[0];
+        }
+        return Arrays.stream(raw.split(","))
+                .map(String::trim)
+                .filter(origin -> !origin.isEmpty())
+                .toArray(String[]::new);
+    }
+
+    static String describeOrigins(String[] allowedOrigins) {
+        if (allowedOrigins.length == 0) {
+            return "仅同源（未配置 jffast.websocket.allowed-origins）";
+        }
+        return Arrays.toString(allowedOrigins);
     }
 }

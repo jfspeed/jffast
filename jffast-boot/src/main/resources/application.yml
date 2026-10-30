@@ -46,18 +46,19 @@ jffast:
     # 分页单页封顶条数（PaginationInnerInterceptor.maxLimit）：请求传更大的 pageSize 会被夹到该值，
     # 避免任意列表接口用 pageSize=1000000 一次读全表。批量导出请走导出接口，不要调高此项。
     page-max-limit: 500
+    # ⚠️ 以下 tenant.* 在**本仓（Base）没有任何消费方**：Base 不注册 TenantLineInnerInterceptor。
+    #   把 enabled 改成 true 不会报错、不会告警，也不会追加任何租户条件 —— 是**静默无效**的。
+    #   真正读取这些键的是商业版的多租户 Starter（@ConfigurationProperties("jffast.mybatis.tenant")），
+    #   装了它的栈才会按下面这份清单决定「开启拦截后哪些表要忽略」。清单留在这里是为了让
+    #   升级到商业版时不用重新盘这些表；如果 Base 部署里根本不用多租户，这几行忽略即可。
+    #
+    #   清单必须覆盖**所有没有 tenant_id 列的表**，否则商业版启用拦截器后
+    #   查询这些表会直接 Unknown column 'tenant_id'。当前无 tenant_id 列的表：
+    #     sys_menu / sys_safe / sys_role_menu / sys_tenant
+    #     sys_notification_template / sys_notification_template_group
+    #     demo_example / demo_leave_application
     tenant:
       enabled: false
-      column: tenant_id
-      # 多租户拦截在 Base 默认关闭（隔离能力为商业版特性）；本清单为「开启后需忽略的表」
-      # 的预留声明：菜单/安全/角色菜单/租户表，以及全局维护的通知模板目录
-      # （模板发送流程不读取模板；不忽略时带租户上下文的管理页查询会 Unknown column）
-      #
-      # ⚠️ 本清单必须覆盖**所有没有 tenant_id 列的表**，否则启用拦截器后
-      # 查询这些表会直接 Unknown column 'tenant_id'。当前无 tenant_id 列的表：
-      #   sys_menu / sys_safe / sys_role_menu / sys_tenant
-      #   sys_notification_template / sys_notification_template_group
-      #   demo_example / demo_leave_application   ← 本次补齐（demo 模块的两张表）
       ignore-tables:
         - sys_menu
         - sys_safe
@@ -74,6 +75,18 @@ jffast:
       enabled: true
     xss:
       enabled: true
+  # WebSocket（站内通知推送）：握手地址 ${jffast.api-prefix}/ws。
+  # allowed-origins 三个取值口径：
+  #   留空（默认）→ 只放行同源握手，任何跨源握手返回 403；
+  #   显式列出  → 逗号分隔的来源清单，如 https://a.example.com,https://b.example.com；
+  #   "*"       → 放行任意来源（仅限本地联调，生产禁用）。
+  # 前端 ${VITE_API_URL}/ws 在生产与后端同源（nginx 反代）；dev 由 vite 代理转发 ——
+  # 代理须开 rewriteWsOrigin 把 Origin 改写成后端来源，否则 dev 下浏览器 Origin 是页面源
+  # （:7201）而后端 Host 是 :7200，后端判定跨源 ⇒ 握手 403，站内通知连不上。
+  websocket:
+    enabled: true
+    path: /ws
+    allowed-origins: ""
   file:
     # 文件下载前按记录大小预检（原默认 0=不限制）。
     # 安全/稳定性：LocalFileStorageService#downloadFile 走 Files.readAllBytes 返回全量 byte[]，
