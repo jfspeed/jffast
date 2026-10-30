@@ -105,13 +105,16 @@ jffast:
       - /sys/rsaPublicKey
     # Sa-Token 1.46.0 起 JSON 多态反序列化白名单（修复 DefaultTyping RCE）。
     # 必须列出登录时写入 session 的全部业务实体（含集合元素与嵌套类型），漏配则读 session 静默失败。
-    # SysUser 写入时自带 roleList(List<SysRole>) / deptList(List<SysDept>，含 children 自嵌套) / dataScope(Map)，
-    # 三者缺一即拒收（JDK 的 String/Long/Map/List/java.time 由 Sa-Token 内置放行，无需列出）。
+    # SysUser 写入时自带 roleList(List<SysRole>) / deptList(List<SysDept>，含 children 自嵌套) / dataScope(Map)
+    # 与 postList(List<SysPost>)，四者缺一即拒收（JDK 的 String/Long/Map/List/java.time 由 Sa-Token 内置放行，无需列出）。
+    # postList 不是授权维度、运行期无人从 session 读它，但它挂在 SysUser 字段上就进了可达图：
+    # 漏配的后果是「绑了岗位的用户登录后读 session 被拒 ⇒ 静默未登录」，由 SaJsonSessionWhitelistTest 强制。
     # 禁止配置 Object.class —— 等于关闭该安全机制。
     sa-json-allow-types:
       - cn.jfspeed.system.entity.SysUser
       - cn.jfspeed.system.entity.SysRole
       - cn.jfspeed.system.entity.SysDept
+      - cn.jfspeed.system.entity.SysPost
     # 可信反向代理的 IP / CIDR：只有 TCP 对端命中本列表时，才按 X-Forwarded-For 逐跳回溯真实客户端 IP。
     # 默认空 = 不信任任何转发头（安全默认）——XFF 是客户端可控请求头，无条件信任等于让
     # 「按 IP 限流 / IP 白名单」变成一句话就能绕过的摆设。
