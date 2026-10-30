@@ -18,9 +18,11 @@ package cn.jfspeed.system.service;
 import java.util.Collections;
 
 import cn.jfspeed.system.entity.SysUser;
+import cn.jfspeed.system.entity.SysUserPost;
 import cn.jfspeed.system.entity.SysUserRole;
 import cn.jfspeed.system.mapper.SysUserDeptMapper;
 import cn.jfspeed.system.mapper.SysUserMapper;
+import cn.jfspeed.system.mapper.SysUserPostMapper;
 import cn.jfspeed.system.mapper.SysUserRoleMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -39,7 +41,7 @@ import static org.mockito.Mockito.when;
 
 /**
  * N-13 / N-25 读取侧：{@code role_id = NULL} 与 {@code ''} 都等价于「空角色集合」，
- * 关系表为空时不得伪造出角色/部门。
+ * 关系表为空时不得伪造出角色/部门/岗位。
  *
  * @author jffast
  */
@@ -56,6 +58,10 @@ class SysUserFieldSemanticsTest {
     @Mock
     private SysUserDeptMapper sysUserDeptMapper;
     @Mock
+    private SysUserPostMapper sysUserPostMapper;
+    @Mock
+    private SysPostService sysPostService;
+    @Mock
     private SysUserRoleMapper sysUserRoleMapper;
     @Mock
     private SysUserScopeQuery sysUserScopeQuery;
@@ -71,7 +77,7 @@ class SysUserFieldSemanticsTest {
     }
 
     @Test
-    @DisplayName("关系表为空（role_id 为 NULL 或 ''）读取结果均为空角色/部门")
+    @DisplayName("关系表为空（role_id 为 NULL 或 ''）读取结果均为空角色/部门/岗位")
     void emptyRelationsYieldEmptyCollections() {
         SysUser user = new SysUser();
         user.setId(9L);
@@ -80,15 +86,17 @@ class SysUserFieldSemanticsTest {
         when(baseMapper.getById(any())).thenReturn(user);
         when(sysUserRoleMapper.selectList(any())).thenReturn(Collections.emptyList());
         when(sysUserDeptMapper.selectList(any())).thenReturn(Collections.emptyList());
+        when(sysUserPostMapper.selectList(any())).thenReturn(Collections.emptyList());
 
         SysUser result = service.getUser(9L, null, null);
 
         assertNull(result.getRoleList(), "无关系行时不得凭空生成角色集合");
         assertNull(result.getDeptList(), "无关系行时不得凭空生成部门集合");
+        assertNull(result.getPostList(), "无关系行时不得凭空生成岗位集合");
     }
 
     @Test
-    @DisplayName("关系行存在但角色已被删除：返回空集合而不是 null")
+    @DisplayName("关系行存在但角色/岗位已被删除：返回空集合而不是 null")
     void danglingRelationYieldsEmptyList() {
         SysUser user = new SysUser();
         user.setId(9L);
@@ -98,11 +106,17 @@ class SysUserFieldSemanticsTest {
                 .thenReturn(Collections.singletonList(new SysUserRole(9L, 999L)));
         when(sysRoleService.listByIds(any())).thenReturn(Collections.emptyList());
         when(sysUserDeptMapper.selectList(any())).thenReturn(Collections.emptyList());
+        when(sysUserPostMapper.selectList(any()))
+                .thenReturn(Collections.singletonList(new SysUserPost(9L, 888L)));
+        when(sysPostService.listByIds(any())).thenReturn(Collections.emptyList());
 
         SysUser result = service.getUser(9L, null, null);
 
         org.junit.jupiter.api.Assertions.assertNotNull(result.getRoleList());
         org.junit.jupiter.api.Assertions.assertTrue(result.getRoleList().isEmpty(),
                 "悬空关系应表现为空集合");
+        org.junit.jupiter.api.Assertions.assertNotNull(result.getPostList());
+        org.junit.jupiter.api.Assertions.assertTrue(result.getPostList().isEmpty(),
+                "悬空岗位绑定应表现为空集合");
     }
 }

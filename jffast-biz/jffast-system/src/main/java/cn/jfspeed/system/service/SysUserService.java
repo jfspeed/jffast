@@ -50,13 +50,16 @@ import cn.jfspeed.system.domain.dto.SysUserImportExcel;
 import cn.jfspeed.system.domain.dto.SysUserImportResult;
 import cn.jfspeed.system.domain.vo.SysUserVO;
 import cn.jfspeed.system.entity.SysDept;
+import cn.jfspeed.system.entity.SysPost;
 import cn.jfspeed.system.entity.SysRole;
 import cn.jfspeed.system.entity.SysUser;
 import cn.jfspeed.system.entity.SysUserDept;
+import cn.jfspeed.system.entity.SysUserPost;
 import cn.jfspeed.system.entity.SysUserRole;
 import cn.jfspeed.system.event.UserAuthorizationChangedEvent;
 import cn.jfspeed.system.mapper.SysSocialBindMapper;
 import cn.jfspeed.system.mapper.SysUserDeptMapper;
+import cn.jfspeed.system.mapper.SysUserPostMapper;
 import cn.jfspeed.system.mapper.SysUserMapper;
 import cn.jfspeed.system.mapper.SysUserRoleMapper;
 import jakarta.annotation.Resource;
@@ -79,6 +82,10 @@ public class SysUserService extends BaseService<SysUserMapper, SysUser>{
     private SysUserDeptMapper sysUserDeptMapper;
     @Resource
     private SysUserRoleMapper sysUserRoleMapper;
+    @Resource
+    private SysUserPostMapper sysUserPostMapper;
+    @Resource
+    private SysPostService sysPostService;
     @Resource
     private SysSocialBindMapper sysSocialBindMapper;
     /**
@@ -112,6 +119,9 @@ public class SysUserService extends BaseService<SysUserMapper, SysUser>{
      * 保存用户；syncRoles/syncDepts 显式承载「是否提交集合」的意图：
      * null=不修改、[]=清空、非空=替换。role_id 缓存必须显式写入（含空串），
      * 不能依赖全局 update-strategy=NOT_EMPTY。
+     *
+     * <p>岗位同步段不走形参：sys_user 没有岗位缓存列，三态意图已由 DTO 映射进
+     * {@code user.postList} 本身（null 与空集合不等价），方法内派生开关即可。
      */
     @Transactional(rollbackFor = Exception.class)
     public void saveUser(SysUser user, boolean syncRoles, boolean syncDepts) {
@@ -141,6 +151,7 @@ public class SysUserService extends BaseService<SysUserMapper, SysUser>{
                     .distinct()
                     .collect(Collectors.toList());
         }
+        List<Long> requestedPostIds = user.getPostList() == null ? null : normalizePostIds(user.getPostList());
         // D1：创建路径只给归属部门时补一条绑定；否则 sys_user.dept_id 不产生可见性，
         // 账号在自身范围内不可见、创建者也无法管理。更新路径保持 null=不改、[]=清空。
         if (create && (requestedDeptIds == null || requestedDeptIds.isEmpty())
@@ -223,6 +234,24 @@ public class SysUserService extends BaseService<SysUserMapper, SysUser>{
                 sysUserRoleMapper.insertBatch(sysUserRoleList);
             }
         }
+        // 岗位段不设 !superAdmin 例外（与角色段有意不同）：岗位不参与授权，给内置超管挂岗位
+        // 没有安全含义，而「跳过」会把前端提交的岗位静默丢弃，比清空更难排查。
+        if (requestedPostIds != null) {
+            // 先校验再删插：让「提交了不存在的岗位」在不触碰关系表的分支上失败
+            validatePostIds(requestedPostIds);
+            LambdaQueryWrapper<SysUserPost> postLambdaQueryWrapper = new LambdaQueryWrapper<>();
+            postLambdaQueryWrapper.eq(SysUserPost::getUserId, user.getId());
+            sysUserPostMapper.delete(postLambdaQueryWrapper);
+            if (!requestedPostIds.isEmpty()) {
+                List<SysUserPost> sysUserPostList = requestedPostIds.stream().map(postId -> {
+                    SysUserPost sysUserPost = new SysUserPost();
+                    sysUserPost.setUserId(user.getId());
+                    sysUserPost.setPostId(postId);
+                    return sysUserPost;
+                }).collect(Collectors.toList());
+                sysUserPostMapper.insertBatch(sysUserPostList);
+            }
+        }
 
         // 仅更新路径发布；创建不存在「旧授权仍留在会话」的问题
         if (!create && (rolesChanged || deptsChanged || deptIdChanged)) {
@@ -233,6 +262,10 @@ public class SysUserService extends BaseService<SysUserMapper, SysUser>{
     /**
      * 数据权限范围内的目标用户：不存在或越权统一拒绝；
      * 命中后校验角色/部门关系补全完整性，关系缺失时 fail-closed。
+     *
+     * <p>岗位关系刻意不装同样的完整性断言：角色/部门 fail-closed 是因为「授权集合不完整就放行
+     * 管理动作」等于越权，岗位不参与授权。悬空岗位绑定由删除防护与详情回填自然消化，
+     * 在这里抛 403 只会把「有人直接改库删了岗位行」放大成该用户的详情/编辑/重置/解锁全部不可用。
      */
     public SysUser getScopedUser(Long id) {
         if (sysUserScopeQuery.findVisibleUser(id) == null) {
@@ -253,7 +286,7 @@ public class SysUserService extends BaseService<SysUserMapper, SysUser>{
     }
 
     /**
-     * 删除用户并清理角色/部门/社交账号绑定；会话失效由调用方在事务提交后处理。
+     * 删除用户并清理角色/部门/岗位/社交账号绑定；会话失效由调用方在事务提交后处理。
      *
      * <p>{@code sys_social_bind} 必须一起清：唯一键 {@code uk_provider_openid} 是
      * {@code (provider, open_id)}，行留着就永久占位——被删用户的社交账号既绑不到新账号，
@@ -276,6 +309,10 @@ public class SysUserService extends BaseService<SysUserMapper, SysUser>{
         LambdaQueryWrapper<SysUserDept> deptQuery = new LambdaQueryWrapper<>();
         deptQuery.eq(SysUserDept::getUserId, userId);
         sysUserDeptMapper.delete(deptQuery);
+
+        LambdaQueryWrapper<SysUserPost> postQuery = new LambdaQueryWrapper<>();
+        postQuery.eq(SysUserPost::getUserId, userId);
+        sysUserPostMapper.delete(postQuery);
 
         if (!this.removeById(userId)) {
             throw new BusinessException(SystemErrorCode.USER_NOT_FOUND);
@@ -391,6 +428,23 @@ public class SysUserService extends BaseService<SysUserMapper, SysUser>{
                 .collect(Collectors.joining(","));
     }
 
+    private static List<Long> normalizePostIds(List<SysPost> postList) {
+        return postList.stream()
+                .filter(post -> post != null && post.getId() != null)
+                .map(SysPost::getId)
+                .distinct()
+                .collect(Collectors.toList());
+    }
+
+    private void validatePostIds(List<Long> postIds) {
+        if (postIds.isEmpty()) {
+            return;
+        }
+        if (sysPostService.listByIds(postIds).size() != postIds.size()) {
+            throw new BusinessException("岗位不存在或已被删除");
+        }
+    }
+
     public SysUser getUser(Long id,String name,String phone){
         Map<String,Object> map = new HashMap<>();
         String msg = "用户不存在";
@@ -433,6 +487,14 @@ public class SysUserService extends BaseService<SysUserMapper, SysUser>{
                 .stream().map(t -> t.getDeptId()).collect(Collectors.toList());
         if (CollUtil.isNotEmpty(deptIds)) {
             user.setDeptList(sysDeptService.listByIds(deptIds));
+        }
+
+        LambdaQueryWrapper<SysUserPost> postLambdaQueryWrapper = new LambdaQueryWrapper<>();
+        postLambdaQueryWrapper.eq(SysUserPost::getUserId, user.getId());
+        List<Long> bindPostIds = sysUserPostMapper.selectList(postLambdaQueryWrapper)
+                .stream().map(t -> t.getPostId()).collect(Collectors.toList());
+        if (CollUtil.isNotEmpty(bindPostIds)) {
+            user.setPostList(sysPostService.listByIds(bindPostIds));
         }
         return user;
     }

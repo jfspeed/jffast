@@ -74,6 +74,9 @@ public class SysUserSaveRequest {
     @Schema(description = "部门列表（仅取 id）")
     private List<IdRef> deptList;
 
+    @Schema(description = "岗位列表（仅取 id）")
+    private List<IdRef> postList;
+
     @Data
     @Schema(description = "仅含 id 的引用")
     public static class IdRef {

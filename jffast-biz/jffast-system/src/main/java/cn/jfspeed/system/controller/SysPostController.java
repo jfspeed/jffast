@@ -25,8 +25,10 @@ import cn.jfspeed.security.annotation.DistributedLock;
 import cn.jfspeed.security.annotation.Idempotent;
 import cn.jfspeed.security.annotation.RateLimit;
 import cn.jfspeed.common.core.base.BaseConstant;
+import cn.jfspeed.common.core.enums.FrameworkErrorCode;
 import cn.jfspeed.common.data.base.BaseController;
 import cn.jfspeed.common.web.domain.dto.R;
+import cn.jfspeed.system.domain.vo.SysPostOptionVO;
 import cn.jfspeed.system.entity.SysPost;
 import cn.jfspeed.system.service.SysPostService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -94,7 +96,14 @@ public class SysPostController extends BaseController<SysPostService, SysPost> {
     @SaCheckPermission(orRole = BaseConstant.ROLE_SUPER_ADMIN, value = "system:post:delete")
     @Operation(summary = "删除岗位")
     public R delete(@PathVariable("id") Long id) {
-        service.removeById(id);
-        return R.success();
+        String error = service.deletePost(id);
+        return error == null ? R.success() : R.error(FrameworkErrorCode.PARAM_ERROR.getCode(), error);
+    }
+
+    @GetMapping("/postSelect")
+    @SaCheckPermission(orRole = BaseConstant.ROLE_SUPER_ADMIN, value = "system:post:view")
+    @Operation(summary = "岗位下拉框")
+    public R postSelect() {
+        return R.success(service.listEnabledOptions().stream().map(SysPostOptionVO::from).toList());
     }
 }

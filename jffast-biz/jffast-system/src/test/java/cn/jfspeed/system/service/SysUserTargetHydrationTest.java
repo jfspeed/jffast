@@ -19,12 +19,15 @@ import java.util.Collections;
 
 import cn.jfspeed.common.core.exception.BusinessException;
 import cn.jfspeed.system.entity.SysDept;
+import cn.jfspeed.system.entity.SysPost;
 import cn.jfspeed.system.entity.SysRole;
 import cn.jfspeed.system.entity.SysUser;
 import cn.jfspeed.system.entity.SysUserDept;
+import cn.jfspeed.system.entity.SysUserPost;
 import cn.jfspeed.system.entity.SysUserRole;
 import cn.jfspeed.system.mapper.SysUserDeptMapper;
 import cn.jfspeed.system.mapper.SysUserMapper;
+import cn.jfspeed.system.mapper.SysUserPostMapper;
 import cn.jfspeed.system.mapper.SysUserRoleMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -45,6 +48,7 @@ import static org.mockito.Mockito.when;
 
 /**
  * N-03：受控目标查询必须补全角色/部门关系；关系缺失时 fail-closed，不能带着不完整上下文做支配判断。
+ * <p>岗位关系不装同样的完整性断言（岗位不参与授权），此处留一条用例把该口径钉住。
  *
  * @author jffast
  */
@@ -60,6 +64,10 @@ class SysUserTargetHydrationTest {
     private SysRoleService sysRoleService;
     @Mock
     private SysUserDeptMapper sysUserDeptMapper;
+    @Mock
+    private SysUserPostMapper sysUserPostMapper;
+    @Mock
+    private SysPostService sysPostService;
     @Mock
     private SysUserRoleMapper sysUserRoleMapper;
     @Mock
@@ -101,6 +109,7 @@ class SysUserTargetHydrationTest {
         when(sysUserRoleMapper.selectList(any()))
                 .thenReturn(Collections.singletonList(new SysUserRole(9L, 2L)));
         when(sysUserDeptMapper.selectList(any())).thenReturn(Collections.emptyList());
+        when(sysUserPostMapper.selectList(any())).thenReturn(Collections.emptyList());
 
         BusinessException ex = assertThrows(BusinessException.class, () -> service.getScopedUser(9L));
 
@@ -117,6 +126,7 @@ class SysUserTargetHydrationTest {
         when(sysUserRoleMapper.selectList(any())).thenReturn(Collections.emptyList());
         when(sysUserDeptMapper.selectList(any()))
                 .thenReturn(Collections.singletonList(new SysUserDept(9L, 3L)));
+        when(sysUserPostMapper.selectList(any())).thenReturn(Collections.emptyList());
 
         BusinessException ex = assertThrows(BusinessException.class, () -> service.getScopedUser(9L));
 
@@ -131,6 +141,8 @@ class SysUserTargetHydrationTest {
         role.setId(2L);
         SysDept dept = new SysDept();
         dept.setId(3L);
+        SysPost post = new SysPost();
+        post.setId(5L);
         when(sysUserScopeQuery.findVisibleUser(9L)).thenReturn(user);
         when(baseMapper.getById(any())).thenReturn(user);
         when(sysUserRoleMapper.selectList(any()))
@@ -139,11 +151,41 @@ class SysUserTargetHydrationTest {
         when(sysUserDeptMapper.selectList(any()))
                 .thenReturn(Collections.singletonList(new SysUserDept(9L, 3L)));
         when(sysDeptService.listByIds(any())).thenReturn(Collections.singletonList(dept));
+        when(sysUserPostMapper.selectList(any()))
+                .thenReturn(Collections.singletonList(new SysUserPost(9L, 5L)));
+        when(sysPostService.listByIds(any())).thenReturn(Collections.singletonList(post));
 
         SysUser result = service.getScopedUser(9L);
 
         assertNotNull(result);
         assertEquals(1, result.getRoleList().size());
         assertEquals(1, result.getDeptList().size());
+        assertEquals(1, result.getPostList().size());
+    }
+
+    @Test
+    @DisplayName("岗位关系缺失：不 fail-closed（岗位不参与授权）")
+    void missingPostHydrationDoesNotReject() {
+        SysUser user = user();
+        SysRole role = new SysRole();
+        role.setId(2L);
+        SysDept dept = new SysDept();
+        dept.setId(3L);
+        when(sysUserScopeQuery.findVisibleUser(9L)).thenReturn(user);
+        when(baseMapper.getById(any())).thenReturn(user);
+        when(sysUserRoleMapper.selectList(any()))
+                .thenReturn(Collections.singletonList(new SysUserRole(9L, 2L)));
+        when(sysRoleService.listByIds(any())).thenReturn(Collections.singletonList(role));
+        when(sysUserDeptMapper.selectList(any()))
+                .thenReturn(Collections.singletonList(new SysUserDept(9L, 3L)));
+        when(sysDeptService.listByIds(any())).thenReturn(Collections.singletonList(dept));
+        when(sysUserPostMapper.selectList(any()))
+                .thenReturn(Collections.singletonList(new SysUserPost(9L, 5L)));
+        when(sysPostService.listByIds(any())).thenReturn(Collections.emptyList());
+
+        SysUser result = service.getScopedUser(9L);
+
+        assertNotNull(result, "悬空岗位绑定只表现为空集合，不得让该用户的详情/编辑全量不可用");
+        assertEquals(0, result.getPostList().size());
     }
 }

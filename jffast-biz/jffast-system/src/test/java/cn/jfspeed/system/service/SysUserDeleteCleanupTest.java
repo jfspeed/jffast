@@ -42,10 +42,12 @@ import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import cn.jfspeed.common.core.exception.BusinessException;
 import cn.jfspeed.system.constant.SystemErrorCode;
 import cn.jfspeed.system.entity.SysUserDept;
+import cn.jfspeed.system.entity.SysUserPost;
 import cn.jfspeed.system.entity.SysUserRole;
 import cn.jfspeed.system.mapper.SysSocialBindMapper;
 import cn.jfspeed.system.mapper.SysUserDeptMapper;
 import cn.jfspeed.system.mapper.SysUserMapper;
+import cn.jfspeed.system.mapper.SysUserPostMapper;
 import cn.jfspeed.system.mapper.SysUserRoleMapper;
 
 /**
@@ -68,6 +70,8 @@ class SysUserDeleteCleanupTest {
     @Mock
     private SysUserDeptMapper sysUserDeptMapper;
     @Mock
+    private SysUserPostMapper sysUserPostMapper;
+    @Mock
     private SysSocialBindMapper sysSocialBindMapper;
 
     @InjectMocks
@@ -78,6 +82,7 @@ class SysUserDeleteCleanupTest {
         MapperBuilderAssistant assistant = new MapperBuilderAssistant(new MybatisConfiguration(), "");
         TableInfoHelper.initTableInfo(assistant, SysUserRole.class);
         TableInfoHelper.initTableInfo(assistant, SysUserDept.class);
+        TableInfoHelper.initTableInfo(assistant, SysUserPost.class);
     }
 
     @BeforeEach
@@ -98,6 +103,7 @@ class SysUserDeleteCleanupTest {
         verify(sysSocialBindMapper).deleteByUserId(9L);
         verify(sysUserRoleMapper).delete(any());
         verify(sysUserDeptMapper).delete(any());
+        verify(sysUserPostMapper).delete(any());
         verify(baseMapper).deleteById(9L);
     }
 

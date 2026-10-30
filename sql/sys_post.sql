@@ -26,6 +26,18 @@ CREATE TABLE IF NOT EXISTS `sys_post` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 ROW_FORMAT=DYNAMIC COMMENT='岗位表';
 
 -- ----------------------------
+-- 用户岗位关联表（一人多岗；与 sys_user_role / sys_user_dept 同构）
+-- 幂等：可重复执行。存量库重跑本文件即可拿到这张表。
+-- ----------------------------
+CREATE TABLE IF NOT EXISTS `sys_user_post` (
+    `user_id`   bigint NOT NULL COMMENT '用户ID',
+    `post_id`   bigint NOT NULL COMMENT '岗位ID',
+    `tenant_id` bigint DEFAULT NULL COMMENT '租户ID',
+    PRIMARY KEY (`post_id`, `user_id`) USING BTREE,
+    KEY `idx_user_id` (`user_id`) USING BTREE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 ROW_FORMAT=DYNAMIC COMMENT='用户岗位关联';
+
+-- ----------------------------
 -- 岗位管理菜单（页面 id=1012，按钮 id=2101-2104，parent=1000 系统管理）
 -- ----------------------------
 INSERT IGNORE INTO `sys_menu` (`id`, `parent_id`, `name`, `sort`, `url`, `path`, `type`, `state`, `perms`, `visible`, `icon`, `remark`) VALUES

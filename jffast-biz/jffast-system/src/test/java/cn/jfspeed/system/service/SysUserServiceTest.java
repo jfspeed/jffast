@@ -49,12 +49,15 @@ import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 
 import cn.jfspeed.common.core.base.BaseConstant;
 import cn.jfspeed.common.core.exception.BusinessException;
+import cn.jfspeed.system.entity.SysPost;
 import cn.jfspeed.system.entity.SysRole;
 import cn.jfspeed.system.entity.SysUser;
 import cn.jfspeed.system.entity.SysUserDept;
+import cn.jfspeed.system.entity.SysUserPost;
 import cn.jfspeed.system.entity.SysUserRole;
 import cn.jfspeed.system.mapper.SysUserDeptMapper;
 import cn.jfspeed.system.mapper.SysUserMapper;
+import cn.jfspeed.system.mapper.SysUserPostMapper;
 import cn.jfspeed.system.mapper.SysUserRoleMapper;
 
 /**
@@ -79,6 +82,10 @@ class SysUserServiceTest {
     @Mock
     private SysUserDeptMapper sysUserDeptMapper;
     @Mock
+    private SysUserPostMapper sysUserPostMapper;
+    @Mock
+    private SysPostService sysPostService;
+    @Mock
     private SysUserRoleMapper sysUserRoleMapper;
     @Mock
     private SysUserScopeQuery sysUserScopeQuery;
@@ -92,11 +99,12 @@ class SysUserServiceTest {
 
     @BeforeAll
     static void initTableInfo() {
-        // 初始化 SysUser/SysUserRole/SysUserDept TableInfo，使 LambdaQueryWrapper 能解析列名
+        // 初始化 SysUser/SysUserRole/SysUserDept/SysUserPost TableInfo，使 LambdaQueryWrapper 能解析列名
         MapperBuilderAssistant assistant = new MapperBuilderAssistant(new MybatisConfiguration(), "");
         TableInfoHelper.initTableInfo(assistant, SysUser.class);
         TableInfoHelper.initTableInfo(assistant, SysUserRole.class);
         TableInfoHelper.initTableInfo(assistant, SysUserDept.class);
+        TableInfoHelper.initTableInfo(assistant, SysUserPost.class);
     }
 
     @BeforeEach
@@ -179,6 +187,7 @@ class SysUserServiceTest {
             when(sysUserRoleMapper.selectList(any())).thenReturn(Collections.singletonList(new SysUserRole(1L, 2L)));
             when(sysRoleService.listByIds(any())).thenReturn(Collections.singletonList(buildRole(2L, 1)));
             when(sysUserDeptMapper.selectList(any())).thenReturn(Collections.emptyList());
+            when(sysUserPostMapper.selectList(any())).thenReturn(Collections.emptyList());
 
             SysUser result = service.getUser(1L, "admin", null);
 
@@ -186,6 +195,28 @@ class SysUserServiceTest {
             assertEquals("admin", result.getUserName());
             assertNotNull(result.getRoleList());
             assertEquals(1, result.getRoleList().size());
+            assertNull(result.getPostList(), "无岗位绑定关系行时不得凭空生成岗位集合");
+        }
+
+        @Test
+        @DisplayName("用户存在且有岗位绑定应设置 postList")
+        void shouldSetPostListWhenUserHasPosts() {
+            SysUser user = buildUser(1L, "admin", 10L, "技术部");
+            when(baseMapper.getById(any())).thenReturn(user);
+            when(sysUserRoleMapper.selectList(any())).thenReturn(Collections.emptyList());
+            when(sysUserDeptMapper.selectList(any())).thenReturn(Collections.emptyList());
+            when(sysUserPostMapper.selectList(any()))
+                    .thenReturn(Collections.singletonList(new SysUserPost(1L, 5L)));
+            SysPost post = new SysPost();
+            post.setId(5L);
+            post.setPostName("架构师");
+            when(sysPostService.listByIds(any())).thenReturn(Collections.singletonList(post));
+
+            SysUser result = service.getUser(1L, "admin", null);
+
+            assertNotNull(result.getPostList());
+            assertEquals(1, result.getPostList().size());
+            assertEquals("架构师", result.getPostList().get(0).getPostName());
         }
     }
 

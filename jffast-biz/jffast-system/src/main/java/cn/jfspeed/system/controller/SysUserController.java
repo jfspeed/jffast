@@ -36,6 +36,7 @@ import cn.jfspeed.system.domain.dto.SysUserProfileRequest;
 import cn.jfspeed.system.domain.dto.SysUserSaveRequest;
 import cn.jfspeed.system.domain.vo.SysUserVO;
 import cn.jfspeed.system.entity.SysDept;
+import cn.jfspeed.system.entity.SysPost;
 import cn.jfspeed.system.entity.SysRole;
 import cn.jfspeed.system.entity.SysTask;
 import cn.jfspeed.system.handler.SysUserImportTemplateHandler;
@@ -746,6 +747,20 @@ public class SysUserController extends BaseController<SysUserService,SysUser> {
                         SysDept dept = new SysDept();
                         dept.setId(deptId);
                         return dept;
+                    })
+                    .collect(Collectors.toList()));
+        }
+        // 判定只看「键是否存在」，不看集合内容：写成 isNotEmpty 会把显式清空（[]）
+        // 误判成不修改，三态契约（null=不改 / []=清空 / 非空=整组替换）随即失效。
+        if (req.getPostList() != null) {
+            user.setPostList(req.getPostList().stream()
+                    .filter(p -> p != null && p.getId() != null)
+                    .map(SysUserSaveRequest.IdRef::getId)
+                    .distinct()
+                    .map(postId -> {
+                        SysPost post = new SysPost();
+                        post.setId(postId);
+                        return post;
                     })
                     .collect(Collectors.toList()));
         }

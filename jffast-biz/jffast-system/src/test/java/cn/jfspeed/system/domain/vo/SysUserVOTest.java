@@ -31,6 +31,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import cn.jfspeed.system.entity.SysDept;
+import cn.jfspeed.system.entity.SysPost;
 import cn.jfspeed.system.entity.SysRole;
 import cn.jfspeed.system.entity.SysUser;
 import tools.jackson.databind.json.JsonMapper;
@@ -82,6 +83,13 @@ class SysUserVOTest {
         dept.setDeptName("研发部");
         dept.setParentId(1L);
         user.setDeptList(List.of(dept));
+
+        SysPost post = new SysPost();
+        post.setId(7L);
+        post.setPostCode("arch");
+        post.setPostName("架构师");
+        post.setTenantId(7L);
+        user.setPostList(List.of(post));
         return user;
     }
 
@@ -92,7 +100,8 @@ class SysUserVOTest {
                 .map(Field::getName)
                 .collect(Collectors.toSet());
         assertEquals(Set.of("id", "userName", "realName", "nickName", "phone", "email", "avatar", "state",
-                "loginDate", "deptId", "deptName", "roleName", "roleList", "deptList", "createTime"), fields);
+                "loginDate", "deptId", "deptName", "roleName", "roleList", "deptList", "postList",
+                "createTime"), fields);
     }
 
     @Test
@@ -100,6 +109,7 @@ class SysUserVOTest {
     void nestedVoFieldsAreTrimmed() {
         assertEquals(Set.of("id", "roleKey", "roleName"), fieldNames(SysUserRoleVO.class));
         assertEquals(Set.of("id", "deptName"), fieldNames(SysUserDeptVO.class));
+        assertEquals(Set.of("id", "postName"), fieldNames(SysUserPostVO.class));
     }
 
     @Test
@@ -115,6 +125,7 @@ class SysUserVOTest {
         assertFalse(json.contains("tenantId"));
         assertFalse(json.contains("menuIds"));
         assertFalse(json.contains("parentId"));
+        assertFalse(json.contains("postCode"));
     }
 
     @Test
@@ -135,6 +146,7 @@ class SysUserVOTest {
         assertTrue(json.contains("\"roleKey\":\"super_admin\""));
         assertTrue(json.contains("\"roleList\""));
         assertTrue(json.contains("\"deptList\""));
+        assertTrue(json.contains("\"postList\""));
     }
 
     @Test
@@ -152,6 +164,9 @@ class SysUserVOTest {
         assertEquals("super_admin", vo.getRoleList().get(0).getRoleKey());
         assertEquals(1, vo.getDeptList().size());
         assertEquals(10L, vo.getDeptList().get(0).getId());
+        assertEquals(1, vo.getPostList().size());
+        assertEquals(7L, vo.getPostList().get(0).getId());
+        assertEquals("架构师", vo.getPostList().get(0).getPostName());
     }
 
     @Test

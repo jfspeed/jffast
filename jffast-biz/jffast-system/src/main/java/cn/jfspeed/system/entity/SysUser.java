@@ -148,6 +148,11 @@ public class SysUser extends BaseEntity {
     @TableField(exist = false)
     private List<SysDept> deptList;
     /**
+     * 用户对应岗位相关信息
+     * */
+    @TableField(exist = false)
+    private List<SysPost> postList;
+    /**
      * 是否业务系统用户 1:*0:*
      */
     @TableField(exist = false)

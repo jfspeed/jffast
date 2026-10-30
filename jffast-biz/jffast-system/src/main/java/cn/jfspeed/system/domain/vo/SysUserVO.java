@@ -35,7 +35,7 @@ import java.util.Objects;
  *   <li>个人中心（{@code pages/user/index.vue}，读 {@code /sys/user/getLoginUser}）：
  *       id / avatar / userName / nickName / realName / roleName / deptName / phone / email / state</li>
  *   <li>用户编辑弹窗（{@code pages/system/user/save.vue}，读 {@code /sys/user/detail/{id}}）：
- *       id / userName / realName / nickName / phone / email / state / deptId / roleList / deptList</li>
+ *       id / userName / realName / nickName / phone / email / state / deptId / roleList / deptList / postList</li>
  *   <li>用户下拉（{@code pages/system/notification/save.vue}，读 {@code /sys/user/all}）：id / userName</li>
  *   <li>登录态回填（{@code store/modules/user.ts} 读 {@code /sys/login}、{@code /sys/getUserInfo}）：
  *       id / userName / realName / nickName / avatar / roleList（roleList[].id、roleList[].roleKey 用于派生超管位）</li>
@@ -94,6 +94,9 @@ public class SysUserVO {
     @Schema(description = "部门绑定列表")
     private List<SysUserDeptVO> deptList;
 
+    @Schema(description = "岗位绑定列表")
+    private List<SysUserPostVO> postList;
+
     @Schema(description = "创建时间")
     private LocalDateTime createTime;
 
@@ -127,6 +130,11 @@ public class SysUserVO {
                 : user.getDeptList().stream()
                         .filter(Objects::nonNull)
                         .map(SysUserDeptVO::from)
+                        .toList());
+        vo.setPostList(user.getPostList() == null ? null
+                : user.getPostList().stream()
+                        .filter(Objects::nonNull)
+                        .map(SysUserPostVO::from)
                         .toList());
         return vo;
     }
