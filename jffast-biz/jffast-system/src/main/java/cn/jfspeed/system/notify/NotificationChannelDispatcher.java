@@ -27,6 +27,8 @@ import java.util.stream.Collectors;
 import org.springframework.stereotype.Component;
 
 import cn.hutool.core.util.StrUtil;
+import cn.jfspeed.common.core.annotation.SensitiveMask;
+import cn.jfspeed.common.core.util.SensitiveMaskUtil;
 import cn.jfspeed.system.constant.NotificationConstant;
 import cn.jfspeed.system.entity.SysUser;
 import cn.jfspeed.system.mapper.SysUserMapper;
@@ -53,8 +55,15 @@ public class NotificationChannelDispatcher {
 
     public NotificationChannelDispatcher(SysUserMapper sysUserMapper, List<NotificationChannel> channels) {
         this.sysUserMapper = sysUserMapper;
+        // merge 函数是必须的：业务侧扩展出两个 getType() 相同的 Bean 时，无 merge 的 toMap 会在
+        // 构造期抛 IllegalStateException: Duplicate key，而异常里不含具体类名 —— 表现为「装了个
+        // 自定义通道，整个应用起不来且日志指不出是谁」。这里显式保留第一个并告警指名。
         this.channelMap = channels.stream()
-                .collect(Collectors.toMap(NotificationChannel::getType, Function.identity()));
+                .collect(Collectors.toMap(NotificationChannel::getType, Function.identity(), (first, second) -> {
+                    log.warn("检测到重复的通知通道类型 {}：保留 {}，忽略 {}（同一 type 只允许一个实现）",
+                            first.getType(), first.getClass().getName(), second.getClass().getName());
+                    return first;
+                }));
     }
 
     /**
@@ -91,7 +100,9 @@ public class NotificationChannelDispatcher {
                 try {
                     channel.send(target, title, content);
                 } catch (Exception e) {
-                    log.error("通知通道投递失败：type={}, userId={}, target={}", type, user.getId(), target, e);
+                    // target 是手机号/邮箱这类 PII，直接拼进 ERROR 日志等于把用户信息写进日志系统
+                    // （日志通常比业务库流传更广、保留更久）。统一走 maskTarget 脱敏。
+                    log.error("通知通道投递失败：type={}, userId={}, target={}", type, user.getId(), maskTarget(target), e);
                 }
             }
         }
@@ -120,5 +131,21 @@ public class NotificationChannelDispatcher {
             return user.getPhone();
         }
         return null;
+    }
+
+    /**
+     * 投递目标（手机号 / 邮箱）的日志脱敏。
+     *
+     * <p>先用 {@link SensitiveMaskUtil#maskText} 按正则识别手机号/邮箱；识别不出时
+     * （自定义通道可能不是这两种格式）退化成中间遮掩，避免整串明文落盘。
+     */
+    private static String maskTarget(String target) {
+        if (StrUtil.isBlank(target)) {
+            return target;
+        }
+        String masked = SensitiveMaskUtil.maskText(target);
+        return StrUtil.equals(masked, target)
+                ? SensitiveMaskUtil.mask(target, SensitiveMask.MaskType.MIDDLE_MASK)
+                : masked;
     }
 }

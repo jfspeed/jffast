@@ -84,7 +84,12 @@ public class SmsNotificationChannel implements NotificationChannel {
 
         HttpResponse<String> response = HTTP_CLIENT.send(builder.build(), HttpResponse.BodyHandlers.ofString());
         if (response.statusCode() < 200 || response.statusCode() >= 300) {
-            throw new IllegalStateException("短信网关返回 HTTP " + response.statusCode() + ": " + response.body());
+            // 异常消息上游会以 log.error 整体打出（NotificationChannelDispatcher），把网关响应体
+            // 拼进去等于把下游回执（可能含号码明细、流水、余额）写进本系统日志。因此消息体只放
+            // 状态码，详情走 debug 并截断。
+            log.debug("短信网关响应体（截断 500 字符）：status={}, body={}",
+                    response.statusCode(), StrUtil.sub(response.body(), 0, 500));
+            throw new IllegalStateException("短信网关返回 HTTP " + response.statusCode());
         }
     }
 
