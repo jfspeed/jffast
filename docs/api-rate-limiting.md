@@ -43,7 +43,22 @@ resilience4j:
 
 | 属性 | 类型 | 默认值 | 说明 |
 |------|------|--------|------|
-| `value` | String | "default" | 限流器名称，对应配置中的 `instances` 键 |
+| `value` | String | `"default"` | 限流器名称，对应配置中的 `instances` 键 |
+| `maxCount` | int | `0` | 窗口内允许的请求数；`<=0` 表示不指定 |
+| `seconds` | int | `0` | 窗口长度（秒）；`<=0` 表示不指定 |
+| `message` | String | `"请求过于频繁，请稍后再试"` | 被限流时的提示文案 |
+| `fallbackResponseCode` | int | `429` | 被限流时写进响应体 `code` 字段的值（**不是 HTTP 状态码**，见「限流响应」） |
+
+**两套取值口径，别混着读**（`RateLimit` 的 javadoc 亦然）：
+
+- `maxCount` / `seconds` **都留 0**（默认）⇒ 走 **yml 注册表实例**（`resilience4j.ratelimiter.instances.<value>`），
+  运维改 yml 就能调、不用改代码 —— 绝大多数用法走这条路；
+- 二者**都显式给值且 `> 0`** ⇒ 按注解值**就地建实例**（内部键 `<value>:<maxCount>:<seconds>`），
+  此时 yml 里的同名实例对该**方法**不再生效。
+
+默认取 0 而不是「10 次 / 60 秒」这类硬默认值是有原因的：这三个参数历史上**切面根本没读**（死参数），
+一旦直接给出默认值，全仓几十处 `@RateLimit("default")` 会从 yml 的宽松值骤降到硬默认值，
+属**静默收紧** —— 正常操作也会被限。所以默认值语义是「未指定，走 yml」，只有显式传值才在代码里定阈值。
 
 ## 配置说明
 
@@ -148,7 +163,7 @@ jffast:
 - **统计口径含成功**：登录限流统计全部尝试（成功也计），只计失败会让撞库「蒙对即清零」。
 - **窗口随首次尝试滑动**：仅首次计数设 TTL，避免固定窗口边界被踩点；key 若因异常失去 TTL 会补设一次，避免该 IP 被永久封禁。
 - **失效策略为 fail-closed**：判定依赖的 Redis 不可用时**直接拒绝**（返回 429）——这几个场景本身已依赖 Redis（验证码 / 失败计数），而「Redis 挂掉」正是攻击者等待的窗口。
-- **超限响应**：`429` + 场景文案（与全局桶的通用文案区分，便于运维定位）。
+- **超限响应**：body `code=429` + 场景文案（HTTP 状态码仍是 200，详见「限流响应」）。
 
 ### 部署在反向代理之后：必须配置 trusted-proxies
 
@@ -173,7 +188,9 @@ JFFAST_SECURITY_TRUSTED_PROXIES=172.16.0.0/12,127.0.0.1
 
 ## 限流响应
 
-当请求被限流时，返回 HTTP 429 状态码：
+> **先说清楚一个容易踩的坑**：被限流时 **HTTP 状态码仍是 200**，`429` 只出现在**响应体的 `code` 字段**。
+> 这是框架统一的 `R` 包装（`GlobalExceptionConfig` 的 `BusinessException` 处理器没有 `@ResponseStatus`），
+> 所以按 HTTP 状态码写 WAF / 网关 / 监控规则会**一条都匹配不上**。
 
 ```json
 {
@@ -182,6 +199,25 @@ JFFAST_SECURITY_TRUSTED_PROXIES=172.16.0.0/12,127.0.0.1
   "data": null
 }
 ```
+
+- HTTP status：`200`（业务失败一律走 body 里的 `code`，成功才是 `code=200`）
+- body.code：`429`（可由注解的 `fallbackResponseCode` 覆盖）
+- body.message：场景文案（登录/验证码各不相同，便于运维定位）
+
+因此要拦的话，请按响应体判别，例如 Nginx：
+
+```nginx
+# 用 body 里的 code 判别；只对本站 API 生效，避免把第三方 200 响应也扫一遍
+location /jffast-api/ {
+  proxy_pass http://backend;
+  body_filter_by_lua_block {
+    -- 按 body.code == 429 计数/告警，而不是 ngx.status
+  }
+}
+```
+
+若确实需要真的 HTTP 429，得给 `GlobalExceptionConfig#processException` 加状态码映射
+（属行为变更：网关重试策略、前端拦截器都会受影响），当前**框架不这么做**。
 
 ## 最佳实践
 
@@ -228,13 +264,25 @@ public void export() { }
 
 ### Actuator 端点
 
-启用 Actuator 后，可以通过以下端点监控限流器状态：
+监控限流器状态的两个端点：
 
 ```
 GET /actuator/health/rateLimiters
 GET /actuator/ratelimiters
 ```
 
+**这两个端点默认访问不到**：`resilience4j.ratelimiter` 的 health indicator 已注册
+（`registerHealthIndicator: true`，见 `application.yml`），但 **web 暴露清单里没有它**：
+
+```yaml
+# application-dev.yml 当前值，注意末尾没有 ratelimiters
+management.endpoints.web.exposure.include: health,info,metrics,prometheus
+# application-prod.yml 更紧：health,info
+```
+
+需要监控时自行把 `ratelimiters` 加进对应 profile 的 exposure 清单（改完记得 `/actuator/ratelimiters`
+会列出每个实例的实时配额，**该端点应纳入鉴权**，不要对外裸奔）。不想暴露端点的话，
+也可以用下面 Prometheus 的指标做告警，不必打开 web 端点。
 ### 指标
 
 Resilience4j 提供以下指标：

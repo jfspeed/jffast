@@ -62,9 +62,12 @@ EXPOSE 7200
 ENV JAVA_OPTS="-Xms256m -Xmx768m -XX:+UseG1GC -XX:MaxGCPauseMillis=200" \
     SERVER_PORT=7200
 
-# 健康检查：只探测端口连通。
-# 不用 /jffast-api/actuator/health 是因为 dev profile 未暴露 actuator，会让 dev 容器永远 unhealthy；
+# 健康检查：只探测端口连通 —— 镜像里不带 curl/wget，也没必要为一次探活引入 HTTP 客户端。
 # 端口通 = Tomcat 起来了，配合 depends_on 的 service_healthy 已足够编排依赖。
+#
+# ⚠️ 这里原先写「dev profile 未暴露 actuator，会让 dev 容器永远 unhealthy」，那是错的：
+#    application-dev.yml 暴露 health,info,metrics,prometheus（prod 也暴露 health,info），
+#    三个 profile 下 HTTP 探活都成立。别照着旧注释去「修正」成本别的理由 —— 真正的取舍在下一段。
 #
 # ⚠ 本条与 deploy/docker-compose.yml 里的 healthcheck 是**两份、互不覆盖关系要看场景**：
 #   · 容器单独 `docker run`（可 dev / test / prod 任意 profile）→ 走本条端口探测；
