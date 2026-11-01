@@ -16,3 +16,9 @@
 *.less   text eol=lf
 *.sh    text eol=lf
 *.bat   text eol=crlf
+
+# 许可证 / 贡献协议 / 代码所有者（无扩展名，单独声明避免 autocrlf 抖动）
+LICENSE    text eol=lf
+NOTICE     text eol=lf
+DCO        text eol=lf
+CODEOWNERS text eol=lf

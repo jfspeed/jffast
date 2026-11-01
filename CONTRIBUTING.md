@@ -94,6 +94,22 @@ git commit -m "fix(auth): 修复登录超时问题"
 git commit -m "docs: 更新部署文档"
 ```
 
+#### DCO 签署（强制）
+
+本项目采用 [Developer Certificate of Origin 1.1](DCO)。每个提交必须包含 `Signed-off-by` 行，
+署名必须与提交作者一致，用 `git commit -s` 自动追加：
+
+```
+Signed-off-by: Your Name <your@email.com>
+```
+
+提交前请确认：
+
+- `git config user.name` / `user.email` 是真实可联系的署名；
+- 你有权按本仓库的 Apache-2.0 许可证提交该代码（引用第三方代码时还需确认许可证兼容）。
+
+DCO 全文见仓库根 [`DCO`](DCO)；未签署的 PR 会被维护者要求补签。
+
 #### 4. 测试
 
 ```bash

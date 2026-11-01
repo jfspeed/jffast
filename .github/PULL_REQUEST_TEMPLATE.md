@@ -17,8 +17,9 @@
 
 ## 自检清单
 
-- [ ] 本地 `mvn clean install -DskipTests` 通过
+- [ ] 本地 `mvn test` 通过（CI 另跑 `mvn verify`，含 JaCoCo 覆盖率门禁）
 - [ ] 提交信息符合 `type(scope): description` 规范
+- [ ] 所有提交已按 DCO 签署（`git commit -s`，含 `Signed-off-by` 行）
 - [ ] 遵循 [docs/开发规范.md](../docs/开发规范.md)
 - [ ] 表结构变更已同步 `sql/` 下脚本，并在上方说明是否需要迁移
 - [ ] 新增配置项已补充到 README 的配置说明中

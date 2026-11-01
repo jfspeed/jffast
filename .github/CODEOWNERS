@@ -1,0 +1,9 @@
+# 默认代码所有者：jfspeed 组织的 maintainers 团队。
+#
+# 前置条件：该团队必须对本仓库拥有 write（或更高）权限，否则 GitHub 不会分配审查人。
+# 建团队后，在仓库 Settings → Branches 的 master 规则里开启
+# “Require review from Code Owners”，CODEOWNERS 才会真正阻塞合并。
+#
+# 若暂不建团队，也可以改成个人账号（同样要求该账号对本仓库有 write 权限），
+# 但公开仓建议保持组织团队口径，不暴露个人账号名。
+* @jfspeed/maintainers
