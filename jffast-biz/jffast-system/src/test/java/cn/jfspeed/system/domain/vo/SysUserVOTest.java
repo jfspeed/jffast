@@ -99,8 +99,8 @@ class SysUserVOTest {
         Set<String> fields = Arrays.stream(SysUserVO.class.getDeclaredFields())
                 .map(Field::getName)
                 .collect(Collectors.toSet());
-        assertEquals(Set.of("id", "userName", "realName", "nickName", "phone", "email", "avatar", "state",
-                "loginDate", "deptId", "deptName", "roleName", "roleList", "deptList", "postList",
+        assertEquals(Set.of("id", "tenantId", "userName", "realName", "nickName", "phone", "email", "avatar",
+                "state", "loginDate", "deptId", "deptName", "roleName", "roleList", "deptList", "postList",
                 "createTime"), fields);
     }
 
@@ -122,7 +122,6 @@ class SysUserVOTest {
         assertFalse(json.contains("roleId"));
         assertFalse(json.contains("deptIds"));
         assertFalse(json.contains("createBy"));
-        assertFalse(json.contains("tenantId"));
         assertFalse(json.contains("menuIds"));
         assertFalse(json.contains("parentId"));
         assertFalse(json.contains("postCode"));
@@ -139,6 +138,8 @@ class SysUserVOTest {
         assertTrue(json.contains("\"phone\""));
         assertTrue(json.contains("\"email\""));
         assertTrue(json.contains("\"state\":1"));
+        // tenantId 是租户隔离视图的对照字段（仅数字标识，非敏感），必须回显
+        assertTrue(json.contains("\"tenantId\":7"));
         assertTrue(json.contains("\"deptId\""));
         assertTrue(json.contains("\"deptName\""));
         assertTrue(json.contains("\"roleName\""));
@@ -154,6 +155,7 @@ class SysUserVOTest {
     void fromShouldMapWhitelistOnly() {
         SysUserVO vo = SysUserVO.from(sampleUser());
         assertEquals(1L, vo.getId());
+        assertEquals(7L, vo.getTenantId());
         assertEquals("admin", vo.getUserName());
         assertEquals("管理员", vo.getRealName());
         assertEquals(10L, vo.getDeptId());

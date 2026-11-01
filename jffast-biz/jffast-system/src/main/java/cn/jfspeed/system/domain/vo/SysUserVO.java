@@ -41,8 +41,12 @@ import java.util.Objects;
  *       id / userName / realName / nickName / avatar / roleList（roleList[].id、roleList[].roleKey 用于派生超管位）</li>
  * </ul>
  *
- * <p>刻意不映射：password、salt、dataScope、roleId（原始逗号串）、roleIds、deptIds、parentId、
- * isBusinessUser、tenantId、createBy、updateBy、updateTime、updatePwdTime。
+     * <p>刻意不映射：password、salt、dataScope、roleId（原始逗号串）、roleIds、deptIds、parentId、
+     * isBusinessUser、createBy、updateBy、updateTime、updatePwdTime。
+     *
+     * <p>tenantId 例外映射出去：多租户场景下前端 / 隔离校验（含 Pro 租户隔离 E2E）需要据此判断用户归属
+     * 租户（如超管带 X-Tenant-Id 建出的用户必须回显其租户标、租户切换视图对照）。tenantId 仅为租户数字
+     * 标识、非敏感字段，与租户列表等已公开信息同源，映射无泄露风险。
  *
  * <p>注意：会话（Sa-Token）里仍然存完整的 {@code SysUser}，本 VO 只影响 HTTP 响应体。
  *
@@ -54,6 +58,9 @@ public class SysUserVO {
 
     @Schema(description = "用户ID")
     private Long id;
+
+    @Schema(description = "归属租户ID（多租户隔离标识，非敏感字段）")
+    private Long tenantId;
 
     @Schema(description = "登录账号")
     private String userName;
@@ -109,6 +116,7 @@ public class SysUserVO {
         }
         SysUserVO vo = new SysUserVO();
         vo.setId(user.getId());
+        vo.setTenantId(user.getTenantId());
         vo.setUserName(user.getUserName());
         vo.setRealName(user.getRealName());
         vo.setNickName(user.getNickName());
