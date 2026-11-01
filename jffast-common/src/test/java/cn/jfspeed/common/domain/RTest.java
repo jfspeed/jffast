@@ -15,6 +15,7 @@
  */
 package cn.jfspeed.common.domain;
 
+import cn.jfspeed.common.core.enums.FrameworkErrorCode;
 import cn.jfspeed.common.web.domain.dto.R;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -64,10 +65,10 @@ class RTest {
     class Error {
 
         @Test
-        @DisplayName("error(msg) 应返回非 200 code")
+        @DisplayName("error(msg) 默认 400：业务失败不再冒充服务端故障")
         void shouldReturnErrorWithMessage() {
             R<Void> r = R.error("出错了");
-            assertNotEquals(200, r.getCode());
+            assertEquals(FrameworkErrorCode.PARAM_ERROR.getCode(), r.getCode());
             assertEquals("出错了", r.getMessage());
             assertFalse(r.isSuccess());
         }
@@ -82,10 +83,10 @@ class RTest {
         }
 
         @Test
-        @DisplayName("error(msg, data) 应返回错误信息和数据")
+        @DisplayName("error(msg, data) 同样默认 400")
         void shouldReturnErrorWithData() {
             R<String> r = R.error("验证失败", "field: name");
-            assertNotEquals(200, r.getCode());
+            assertEquals(FrameworkErrorCode.PARAM_ERROR.getCode(), r.getCode());
             assertEquals("验证失败", r.getMessage());
             assertEquals("field: name", r.getData());
         }

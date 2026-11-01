@@ -53,8 +53,9 @@ public class SaTokenConfig implements WebMvcConfigurer {
 
     // 免登录即可访问的路径。
     // 注意：/sys/getUserInfo **不在**此列——它需要登录态，放行会让未登录请求走到 Controller
-    // 里 `return R.error("用户未登录")`（HTTP 200 + code 500），前端拿不到 401 就无法正确跳登录页。
-    // 交给下方 StpUtil.checkLogin() 抛 NotLoginException，由 SaTokenExceptionConfig 统一返回 HTTP 401。
+    // 里 `return R.error(AuthErrorCode.NOT_LOGIN...)`（HTTP 200 + body code 401），
+    // 前端仍拿不到 HTTP 401；交给下方 StpUtil.checkLogin() 抛 NotLoginException，
+    // 由 SaTokenExceptionConfig 统一返回 HTTP 401。
     private static final List<String> PUBLIC_PATHS = Arrays.asList(
             "/sys/login", "/sys/getCode", "/sys/needCaptcha", "/sys/phoneLogin", "/sys/sendPhoneCode",
             "/sys/logout"

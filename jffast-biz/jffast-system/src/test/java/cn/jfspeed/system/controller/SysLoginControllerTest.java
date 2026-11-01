@@ -178,7 +178,8 @@ class SysLoginControllerTest {
 
                 mockMvc.perform(get("/sys/getUserInfo"))
                         .andExpect(status().isOk())
-                        .andExpect(jsonPath("$.code").value(500));
+                        .andExpect(jsonPath("$.code").value(401))
+                        .andExpect(jsonPath("$.message").value("请先登录"));
             }
         }
 

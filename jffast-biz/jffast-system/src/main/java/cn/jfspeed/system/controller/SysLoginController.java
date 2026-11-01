@@ -21,6 +21,7 @@ import cn.hutool.captcha.generator.RandomGenerator;
 import cn.hutool.core.date.LocalDateTimeUtil;
 import cn.hutool.core.util.StrUtil;
 import cn.jfspeed.common.web.domain.dto.R;
+import cn.jfspeed.common.core.enums.AuthErrorCode;
 import cn.jfspeed.common.core.config.JfFastProperties;
 import cn.jfspeed.common.core.util.IdUtils;
 import cn.jfspeed.common.web.util.ClientIpResolver;
@@ -161,7 +162,7 @@ public class SysLoginController {
     public R getUserInfo() {
         SysUser user = (SysUser) LoginUtil.getLoginSysUser();
         if (user == null) {
-            return R.error("用户未登录");
+            return R.error(AuthErrorCode.NOT_LOGIN.getCode(), AuthErrorCode.NOT_LOGIN.getMsg());
         }
 
         Map<String, Object> map = new HashMap<>();
@@ -224,14 +225,14 @@ public class SysLoginController {
                 String code = loginDTO.getCode();
                 String key = loginDTO.getKey();
                 if (StrUtil.isBlank(code) || StrUtil.isBlank(key)) {
-                    return R.error("请输入图形验证码");
+                    return R.error(SystemErrorCode.CAPTCHA_REQUIRED.getCode(), SystemErrorCode.CAPTCHA_REQUIRED.getMsg());
                 }
                 String cachedCode = RedisUtil.get(BaseConstant.CACHE_VER_CODE+key);
                 if (cachedCode == null) {
-                    return R.error("验证码已失效，请重新获取");
+                    return R.error(SystemErrorCode.CAPTCHA_EXPIRED.getCode(), SystemErrorCode.CAPTCHA_EXPIRED.getMsg());
                 }
                 if (!code.equalsIgnoreCase(cachedCode)) {
-                    return R.error("验证码错误");
+                    return R.error(SystemErrorCode.CAPTCHA_INVALID.getCode(), SystemErrorCode.CAPTCHA_INVALID.getMsg());
                 }
                 // 验证码使用后立即删除，防止重放
                 RedisUtil.del(BaseConstant.CACHE_VER_CODE+key);

@@ -40,6 +40,7 @@ import cn.jfspeed.system.entity.SysPost;
 import cn.jfspeed.system.entity.SysRole;
 import cn.jfspeed.system.entity.SysTask;
 import cn.jfspeed.system.handler.SysUserImportTemplateHandler;
+import cn.jfspeed.system.constant.SystemErrorCode;
 import cn.jfspeed.common.core.base.BaseConstant;
 import cn.jfspeed.common.core.config.JfFastSystemProperties;
 import cn.jfspeed.common.core.exception.BusinessException;
@@ -164,7 +165,7 @@ public class SysUserController extends BaseController<SysUserService,SysUser> {
             if (user.getUpdatePwdTime() == null){
                 SysUser byId = service.getById(user.getId());
                 if (byId == null) {
-                    return R.error("用户不存在");
+                    return R.error(SystemErrorCode.USER_NOT_FOUND.getCode(), SystemErrorCode.USER_NOT_FOUND.getMsg());
                 }
                 user.setUpdatePwdTime(byId.getUpdatePwdTime());
             }
@@ -495,11 +496,11 @@ public class SysUserController extends BaseController<SysUserService,SysUser> {
         }
         SysUser user = service.getById(currentId);
         if (user == null) {
-            return R.error("用户不存在");
+            return R.error(SystemErrorCode.USER_NOT_FOUND.getCode(), SystemErrorCode.USER_NOT_FOUND.getMsg());
         }
         boolean authenticate = EncryptionUtil.verifyPassword(oldPassword, user.getPassword());
         if (!authenticate){
-            return R.error("旧密码错误");
+            return R.error(SystemErrorCode.PASSWORD_ERROR.getCode(), "旧密码错误");
         }
         String password = EncryptionUtil.getEncryptPassword(newPassword);
         UpdateWrapper<SysUser> updateWrapper = new UpdateWrapper<>();

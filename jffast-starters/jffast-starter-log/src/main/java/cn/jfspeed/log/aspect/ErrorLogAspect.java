@@ -17,6 +17,7 @@ package cn.jfspeed.log.aspect;
 
 import cn.hutool.core.util.StrUtil;
 import cn.hutool.json.JSONUtil;
+import cn.jfspeed.common.core.enums.FrameworkErrorCode;
 import cn.jfspeed.common.core.util.IdUtils;
 import cn.jfspeed.common.web.domain.dto.R;
 import cn.jfspeed.common.web.util.ClientIpResolver;
@@ -36,7 +37,6 @@ import org.springframework.web.multipart.MultipartFile;
 
 import jakarta.servlet.http.HttpServletRequest;
 import java.lang.reflect.Method;
-import java.sql.SQLException;
 import java.util.Enumeration;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -220,13 +220,9 @@ public class ErrorLogAspect {
             BusinessException be = (BusinessException) error;
             return R.error(be.getCode(), be.getMessage());
         }
-        if (error instanceof NullPointerException) {
-            return R.error("空指针异常");
-        }
-        if (error instanceof SQLException) {
-            return R.error("SQL异常");
-        }
-        return R.error(error.getMessage() != null ? error.getMessage() : error.getClass().getSimpleName());
+        // 非业务异常一律按服务端故障返回：默认 R.error(msg) 已是业务 400，
+        // 且异常类名 / 原始消息属内部细节，只落日志，不回给客户端。
+        return R.error(FrameworkErrorCode.SYSTEM_ERROR.getCode(), "系统异常，请联系管理员");
     }
 
     private String truncate(String str, int maxLen) {

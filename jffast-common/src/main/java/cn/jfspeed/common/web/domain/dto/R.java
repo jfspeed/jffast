@@ -97,8 +97,12 @@ public class R<T> {
         result.setMessage(msg);
         return result;
     }
+    /**
+     * 业务失败默认 400（与 {@code BusinessException(msg)} 一致）；500 只表示真正的服务端故障。
+     * 需要 500 时显式传 {@code FrameworkErrorCode.SYSTEM_ERROR.getCode()}。
+     */
     public static <T> R<T> error(String msg, T data) {
-        return error(FrameworkErrorCode.SYSTEM_ERROR.getCode(), msg, data);
+        return error(FrameworkErrorCode.PARAM_ERROR.getCode(), msg, data);
     }
 
     public static <T> R<T> error(Integer code, String msg, T data) {
@@ -109,8 +113,9 @@ public class R<T> {
         return result;
     }
 
+    /** 业务失败默认 400；语义与 {@code BusinessException(msg)} 一致，500 仅用于服务端故障。 */
     public static <T> R<T> error(String msg) {
-        return error(FrameworkErrorCode.SYSTEM_ERROR.getCode(), msg);
+        return error(FrameworkErrorCode.PARAM_ERROR.getCode(), msg);
     }
 
     public static <T> R<T> status(boolean flag) {

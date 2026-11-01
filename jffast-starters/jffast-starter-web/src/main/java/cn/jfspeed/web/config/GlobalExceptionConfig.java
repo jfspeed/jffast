@@ -16,9 +16,6 @@
 package cn.jfspeed.web.config;
 
 import java.nio.charset.StandardCharsets;
-import java.sql.SQLException;
-
-import org.springframework.dao.DataAccessException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.validation.BindException;
@@ -162,18 +159,8 @@ public class GlobalExceptionConfig {
     @ResponseStatus(HttpStatus.INTERNAL_SERVER_ERROR)
     @ExceptionHandler(Exception.class)
     public R exception(Exception e) {
-        String msg = BaseConstant.UNKNOWN_EXCEPTION;
-        if (e instanceof NullPointerException){
-            msg = "空指针异常";
-        }else if (e instanceof SQLException){
-            msg = "SQL异常";
-        }else if (e instanceof DataAccessException){
-            // Spring 的 DataAccessException 体系（DataIntegrityViolationException 等）
-            // **不继承** java.sql.SQLException，原先的 instanceof SQLException 判断对它恒不成立，
-            // 于是所有约束违例都被误报成「系统繁忙」。
-            msg = "数据访问异常";
-        }
-        R<Object> error = R.error(500, msg, IdUtils.snowflakeShort());
+        // 对外只给通用文案：异常类名 / 驱动信息属内部细节，排障看日志。
+        R<Object> error = R.error(500, BaseConstant.UNKNOWN_EXCEPTION, IdUtils.snowflakeShort());
         String safeMessage = SensitiveMaskUtil.maskText(e.getMessage());
         String safeErrorJson = SensitiveMaskUtil.maskText(JSONUtil.toJsonStr(error));
         log.error("GlobalException: {} [uri: {}] [return：{}]", safeMessage, safeUri(),

@@ -33,7 +33,12 @@ public enum SystemErrorCode implements IErrorCode {
     /** RSA 公钥未配置：前端无法加密密码，登录页应阻止提交而非降级明文 */
     RSA_PUBLIC_KEY_MISSING(1005, "RSA公钥未配置"),
     /** 初始密码未配置：拒绝「导入用户」等需要落初始口令的操作，避免落到公开常量上 */
-    INIT_PASSWORD_NOT_CONFIGURED(1006, "初始密码未配置");
+    INIT_PASSWORD_NOT_CONFIGURED(1006, "初始密码未配置"),
+    /** 登录失败达阈值后未提交验证码：前端据此展开验证码输入框 */
+    CAPTCHA_REQUIRED(1007, "请输入图形验证码"),
+    /** 验证码 Redis 记录已过期：前端据此刷新验证码图片 */
+    CAPTCHA_EXPIRED(1008, "验证码已失效，请重新获取"),
+    CAPTCHA_INVALID(1009, "验证码错误");
 
     private final int code;
     private final String msg;
