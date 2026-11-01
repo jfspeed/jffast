@@ -4,6 +4,12 @@ target/
 !**/src/main/**/target/
 !**/src/test/**/target/
 
+### Python bytecode cache ###
+# The public hygiene gate is a Python script; running it leaves a __pycache__ next to
+# it. Build output never belongs in the repository.
+__pycache__/
+*.py[cod]
+
 ### STS ###
 .apt_generated
 .classpath

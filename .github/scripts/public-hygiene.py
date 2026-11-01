@@ -39,6 +39,16 @@ CONFIG_EXT = ('.yml', '.yaml', '.properties', '.conf', '.cfg', '.ini', '.toml',
 # `j(?:f|p)fast` covers both product roots (the current one and the pre-rename one);
 # the suffix must resolve against what this repository's build files publish.
 FAMILY = re.compile(r'\bj(?:f|p)fast(-[a-z0-9]+)+\b', re.I)
+
+# A relative path that climbs out of the repository. The rules above refuse a developer
+# machine path by shape, but such a path carries a drive letter - a *relative* reference
+# that points outside this checkout (`../sibling-tree/file`) has no drive letter and would
+# therefore be invisible to them, while it names a location a reader of this repository
+# cannot reach. The rule is about the shape only: what matters is the number of directory
+# levels the reference climbs, compared with the depth of the file that contains it.
+# A reference that climbs no further than its own directory depth stays inside the
+# checkout and is an ordinary in-repository path.
+CLIMB = re.compile(r'(?<![A-Za-z0-9._~-])\.\.[/\\]([A-Za-z0-9._-]+(?:[/\\][A-Za-z0-9._-]+)+)')
 # Names that are public but not declared in *this* repository's build files, so the
 # derivation above cannot see them: the companion published repository, the modules of
 # the published backend that this front-end refers to by name, the API context path,
@@ -127,6 +137,81 @@ def published_names(root, files):
     return names
 
 
+def repository_roots(files):
+    """Every name that exists at the top level of this repository.
+
+    A reference that stays inside the repository may name any of them - a directory or a
+    file. The set is derived from the checkout itself, so it needs no maintenance.
+    """
+    return set(rel.split('/')[0].lower() for rel in files)
+
+
+def repository_directories(files):
+    """Every name that exists at the top level of this repository as a directory.
+
+    Used where a name is matched against the *shape* of the checkout rather than against
+    a path: a directory of this repository can be referred to by name from outside it
+    (the documentation says so), while a file name cannot.
+    """
+    return set(rel.split('/')[0].lower() for rel in files if '/' in rel)
+
+
+def resolved_reference(rel, line):
+    """The repository-relative path a relative reference points at.
+
+    The reference is resolved against the directory that contains it: each `..` climbs one
+    level. The result is the location a reader of this repository can reach.
+
+    Two outcomes are distinguished:
+      - a string: the reference stays inside the repository root;
+      - None: the reference climbs past the root and points outside it.
+    """
+    depth = len(rel.split('/')) - 1
+    base = rel.split('/')[:-1]
+    for match in CLIMB.finditer(line):
+        raw = match.group(0).replace('\\', '/')
+        levels = 0
+        index = 0
+        while raw[index:].startswith('../'):
+            levels += 1
+            index += 3
+        rest = raw[index:].split('/')
+        if levels > depth:
+            return None
+        # Resolve: climb `levels` levels, then descend through the remainder.
+        stack = list(base)
+        for _ in range(levels):
+            if stack:
+                stack.pop()
+        resolved = '/'.join(stack + [part for part in rest if part])
+        if resolved:
+            return resolved.lower()
+    return ''
+
+
+def escaped_name(rel, line):
+    """The name a relative reference lands on when it leaves the repository, or None.
+
+    A reference that climbs past the root reaches a sibling of this checkout. When the
+    name it reaches is one this repository publishes - the companion repository that is
+    cloned next to it - the reference is the ordinary instruction to work on both
+    side by side, and it is not reported.
+    """
+    depth = len(rel.split('/')) - 1
+    for match in CLIMB.finditer(line):
+        raw = match.group(0).replace('\\', '/')
+        levels = 0
+        index = 0
+        while raw[index:].startswith('../'):
+            levels += 1
+            index += 3
+        if levels <= depth:
+            continue
+        rest = raw[index:].split('/')
+        return rest[0].lower() if rest and rest[0] else ''
+    return None
+
+
 def scan(root):
     files = tracked_files(root)
     scope = [rel for rel in files
@@ -136,6 +221,8 @@ def scan(root):
         raise GateError('nothing in scope (%d tracked file(s)); a collapsed scope is not a PASS'
                         % len(files))
     allowed = published_names(root, files) | COMPANION
+    known_roots = repository_roots(files)
+    known_dirs = repository_directories(files)
     hits = []
     for rel in scope:
         path = os.path.join(root, rel.replace('/', os.sep))
@@ -157,6 +244,24 @@ def scan(root):
                     hits.append('%s:%d: [unpublished-artifact-name] %s'
                                 % (rel, number, line.strip()[:160]))
                     break
+            resolved = resolved_reference(rel, line)
+            if resolved is None:
+                # Climbs past the repository root: points at a location a reader of this
+                # repository cannot reach, unless it names the published companion that
+                # is cloned next to this checkout, or a name this repository itself
+                # uses - a reader who sees such a name knows what is meant by it.
+                escaped = escaped_name(rel, line)
+                if (escaped and escaped not in allowed
+                        and escaped not in known_dirs):
+                    hits.append('%s:%d: [path-outside-repository] %s'
+                                % (rel, number, line.strip()[:160]))
+            elif resolved:
+                # Stays inside the root but names a directory this repository does not
+                # contain: the reference cannot be followed either.
+                head = resolved.split('/')[0]
+                if head not in known_roots and head not in allowed:
+                    hits.append('%s:%d: [path-outside-repository] %s'
+                                % (rel, number, line.strip()[:160]))
     return hits, len(scope)
 
 
@@ -204,6 +309,48 @@ def self_test():
             _commit(repo)
             hits, _scope = scan(repo)
             results.append((text[:58], bool(hits) == expect, hits))
+
+        # Relative references, judged against the depth of the file that holds them.
+        # Each case is written into a file at the depth the reference assumes, so the
+        # case states one thing only: where the reference lands. The path fragments are
+        # assembled from parts, because this file is itself in scan scope: a literal
+        # reference written out here would be the very thing the rule refuses.
+        up = '..' + '/'
+        depth_cases = (
+            # (file path, text, expected to be reported)
+            # A name this repository does not use at all: nothing a reader can resolve.
+            ('a.md', 'see ' + up + 'sibling-tree/docs/guide.md', True),
+            # A name this repository uses: the reader knows what it refers to.
+            ('a.md', 'see ' + up + 'docs/guide.md', False),
+            ('nested/a.md', 'see ' + up + 'docs/guide.md', False),
+            ('nested/a.md', 'see ' + up + up + 'docs/guide.md', False),
+            # Three levels up from a file three levels deep lands back on the root.
+            ('nested/deeper/deepest/a.md', 'import pkg from ' + up + up + up + 'package.json', False),
+            ('nested/deeper/a.md', 'import pkg from ' + up + up + up + 'package.json', True),
+            ('nested/deeper/a.md', 'mount ' + up + 'sql/init.sql:/x:ro', False),
+            ('a.md', 'reject the module name ' + up + 'evil', False),
+            ('a.md', 'the path ' + up + 'escape.txt is rejected', False),
+        )
+        for index, (rel, text, expect) in enumerate(depth_cases):
+            repo = os.path.join(tmp, 'depth-%d' % index)
+            os.makedirs(repo)
+            target = os.path.join(repo, *rel.split('/'))
+            parent = os.path.dirname(target)
+            if parent:
+                os.makedirs(parent, exist_ok=True)
+            with open(target, 'w', encoding='utf-8', newline='') as h:
+                h.write(text + '\r\n')
+            os.makedirs(os.path.join(repo, 'docs'), exist_ok=True)
+            with open(os.path.join(repo, 'docs', 'guide.md'), 'w', encoding='utf-8') as h:
+                h.write('guide\n')
+            os.makedirs(os.path.join(repo, 'nested', 'deeper', 'deepest'), exist_ok=True)
+            with open(os.path.join(repo, 'package.json'), 'w', encoding='utf-8') as h:
+                h.write('{"name": "jffast-' + 'probe"}\n')
+            with open(os.path.join(repo, 'pom.xml'), 'w', encoding='utf-8', newline='') as h:
+                h.write('<project><artifactId>jffast-' + 'probe</artifactId></project>')
+            _commit(repo)
+            hits, _scope = scan(repo)
+            results.append(('%s (in %s)' % (text[:44], rel), bool(hits) == expect, hits))
         # A checkout whose build files declare no name must fail closed, not pass.
         empty = os.path.join(tmp, 'empty')
         os.makedirs(empty)
