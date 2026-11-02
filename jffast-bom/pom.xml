@@ -246,20 +246,20 @@
                 <artifactId>dom4j</artifactId>
                 <version>2.1.4</version>
             </dependency>
-            <!-- 安全：1.78 受 CVE-2025-8916（PKIXCertPathReviewer 过度资源分配，DoS，CVSS 6.3）影响，
-                 官方修复版本 1.79。纯版本 bump，API 兼容。
-                 2026-11-02 再升到 1.80（1.x 线当前最新）。背景与残留告警见
-                 jffast/SECURITY.md「已知取舍」：bcprov 是 commons-compress（经 POI）的传递依赖，
-                 本项目源码零引用，且已声明的 4 条告警（2 CRITICAL）分别涉及 X.509 证书链
-                 Name Constraints 绕过、GOST 28147 CTR 密钥流复用、ASN.1 嵌套深度守卫重置、
-                 LDAP 注入——jffast 不使用其中任何一条路径（自实现 RSA + Sa-Token，不做证书链
-                 校验、不用 GOST、不接 LDAP），故判定为不可达。
-                 1.x 线修复这些告警需 1.84/1.85，Maven Central 尚未发布；升级到 2.x 需要
-                 连带改 bcpkix / bcutil 且属大版本迁移，不在 1.0.0 首发范围内。 -->
+            <!-- 安全：bcprov 是 commons-compress（经 POI）的传递依赖，本项目源码零引用，
+                 但依赖扫描仍会按字面命中告警，故由 BOM 统一钉住版本。
+                 2026-11-02 一次性升到 1.86（1.x 线当前最新），4 条告警全部消除：
+                   CVE-2025-14813 GOST 28147 CTR 密钥流复用（CRITICAL）→ 修复于 1.80.2
+                   CVE-2026-0636  LDAP 注入（MEDIUM）              → 修复于 1.84
+                   CVE-2026-13506 ASN.1 嵌套深度守卫重置（HIGH）  → 修复于 1.85
+                   CVE-2026-8763  X.509 Name Constraints 绕过（CRITICAL）→ 修复于 1.85
+                 1.86 起公开漏洞库对本构件零命中。1.x 线 API 兼容，无需连带改 bcpkix / bcutil；
+                 本仓未使用 2.x，故不涉及大版本迁移。
+                 背景与残留说明见 jffast/SECURITY.md「依赖版本管理」。 -->
             <dependency>
                 <groupId>org.bouncycastle</groupId>
                 <artifactId>bcprov-jdk18on</artifactId>
-                <version>1.80</version>
+                <version>1.86</version>
             </dependency>
 
             <!-- ─── Flowable 工作流引擎 ─── -->
