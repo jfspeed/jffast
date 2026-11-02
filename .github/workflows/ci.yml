@@ -48,15 +48,14 @@ jobs:
           distribution: 'temurin'
           cache: 'maven'
 
-      - name: Build with Maven
-        run: mvn clean compile -B
-
+      # CI 只做编译 + 测试 + 覆盖率；fat jar（约 109 MB）由 release.yml 在打 tag 时构建，
+      # 这里跳过 spring-boot:repackage，避免每次 push/PR 白打一个不上传的胖包。
       # 测试 + 覆盖率门禁一起走 verify：jacoco 的 report/check 分别绑在 test / verify 阶段，
       # 且 check 的 rules 配置挂在 execution id=check 上。命令行直接调 `mvn jacoco:check`
       # 用的是 default-cli 执行，读不到那段配置，会以
       # "The parameters 'rules' for this goal are missing or invalid" 失败——门禁形同虚设且必红。
       - name: Run tests and coverage gate
-        run: mvn verify -B
+        run: mvn verify -B -Dspring-boot.repackage.skip=true
 
       - name: Dependency review (PR)
         uses: actions/dependency-review-action@v5
