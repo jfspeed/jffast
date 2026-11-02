@@ -3,6 +3,18 @@ name: Release
 # 打 tag（v*）时构建可执行 jar 并创建 GitHub Release。
 # 版本定版已完成：pom / Helm appVersion / 镜像 tag 均已从 1.0.0-SNAPSHOT 改为 1.0.0。
 # 后续每次发布：先由发布指令把版本改为新值，再打同名 tag（首发 v1.0.0）。
+#
+# ⚠️ 发版前有两道闸门，缺一不可（2026-11-02 事故的教训）：
+#
+#   1) **产物类路径闸门**（release-gate.py）：CI 每次 push 都跳过 fat jar（约 109 MB），
+#      所以真正被打出来、真正会被用户下载的那个 jar，从头到尾没人看过一眼。
+#      2026-11-02 出事时，坏 jar 正是这样一路走到 tag 的。这一道直接查 jar 内部：
+#      有没有「一族坐标两个版本」、有没有「注册了却没打进包的自动配置类」。
+#
+#   2) **真启动闸门**：用本仓自己的 compose 编排起 MySQL + Redis（自带播种），
+#      把刚打出来的 jar 真的跑起来，等到 "Started JfFastApplication" 才算过。
+#      缺类、缺表、配置对不上，这一步都会炸在起服务的那一刻——
+#      而这正是出事那天用户遇到的现象。
 
 on:
   push:
@@ -28,6 +40,44 @@ jobs:
 
       - name: Build fat jar
         run: mvn -B -DskipTests package
+
+      # ── 闸门 1/2：产物内部的类路径一致性（不需要数据库 / 网络 / JVM） ──
+      - name: Gate - packaged jar classpath integrity
+        run: python .github/scripts/release-gate.py check-jar jffast-boot/target/jffast-boot.jar
+
+      # ── 闸门 2/2：真启动（用本仓自己的编排，播种逻辑与用户部署完全一致） ──
+      - name: Start MySQL + Redis (the repo's own stack, seeds itself on first boot)
+        run: docker compose -f deploy/docker-compose.yml up -d --wait mysql redis
+
+      - name: Gate - the published jar really starts
+        run: |
+          set -euo pipefail
+          export MYSQL_HOST=127.0.0.1 MYSQL_PORT=3306 MYSQL_DB=jffast MYSQL_USER=root MYSQL_PASSWORD=test1234
+          export REDIS_HOST=127.0.0.1 REDIS_PORT=6379 REDIS_PASSWORD=test1234
+          java -jar jffast-boot/target/jffast-boot.jar --spring.profiles.active=dev > /tmp/jffast-startup.log 2>&1 &
+          pid=$!
+          for i in $(seq 1 120); do
+            if grep -q "Started JfFastApplication" /tmp/jffast-startup.log; then
+              echo "startup succeeded after ${i}s"
+              curl -fsS "http://127.0.0.1:7200/jffast-api/actuator/health" || true
+              echo
+              kill "$pid" 2>/dev/null || true
+              exit 0
+            fi
+            if ! kill -0 "$pid" 2>/dev/null; then
+              echo "::error::the app exited before it finished starting"
+              tail -80 /tmp/jffast-startup.log
+              exit 1
+            fi
+            sleep 1
+          done
+          echo "::error::timed out waiting for the app to start"
+          tail -80 /tmp/jffast-startup.log
+          exit 1
+
+      - name: Tear down the stack
+        if: always()
+        run: docker compose -f deploy/docker-compose.yml down -v || true
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v3
