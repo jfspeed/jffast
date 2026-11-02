@@ -59,7 +59,7 @@ jobs:
         run: mvn verify -B
 
       - name: Dependency review (PR)
-        uses: actions/dependency-review-action@v4
+        uses: actions/dependency-review-action@v5
         if: github.event_name == 'pull_request'
         continue-on-error: true
 
