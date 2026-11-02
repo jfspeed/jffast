@@ -34,6 +34,12 @@ jobs:
   backend:
     name: Base Backend Build & Test
     runs-on: ubuntu-latest
+    # OIDC 的 id-token: write 只能在 job 级设置：permissions 不是 step 级键，
+    # 写在 step 里会被 GitHub 判为 Unexpected value 'permissions'，整份 workflow 加载失败。
+    # job 级 permissions 会覆盖默认值，所以显式保留 contents: read 供 checkout 使用。
+    permissions:
+      contents: read
+      id-token: write
     strategy:
       matrix:
         java-version: [ '21' ]
@@ -62,13 +68,17 @@ jobs:
         if: github.event_name == 'pull_request'
         continue-on-error: true
 
+      # codecov v4 起废弃无 token 上传，且 v4 仍是 node20 运行时（2026-09-23 已从 runner 移除）。
+      # v7 走 OIDC：公开仓无需配置 CODECOV_TOKEN secret，Dependabot PR 也能上传
+      # （有 token 时 Dependabot 拿不到 secrets，反而传不上去）。
       - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v4
+        uses: codecov/codecov-action@v7
         if: success()
         continue-on-error: true
         with:
           files: '**/target/site/jacoco/jacoco.xml'
           fail_ci_if_error: false
+          use_oidc: true
 
       - name: Upload test results
         uses: actions/upload-artifact@v7
