@@ -99,8 +99,12 @@
                 <version>${project.version}</version>
             </dependency>
 
-            <!-- 刻意停在 3.5.16：3.5.17 将 IService/ServiceImpl 包名由 extension.service 改为 spring.service，
-                 属全项目 import 迁移，与 Boot 4 升级无关，不纳入本次范围。3.5.16 已提供 spring-boot4-starter。 -->
+            <!-- MyBatis-Plus 整族锁在同一个版本上：这一族在 3.5.17 起把 IService/ServiceImpl
+                 的包名从 extension.service 挪到 spring.service（MybatisSqlSessionFactoryBean 同样
+                 从 extension.spring 挪到 spring），属破坏性变更，跨版本混用会在运行期抛
+                 NoClassDefFoundError，且构建期无任何告警（Maven 的 dependencyManagement 覆盖
+                 传递依赖版本默认静默）。因此本族 6 个坐标必须同版本升级/降级，不允许只升一半。
+                 构建期兜底：根 pom 的 maven-enforcer-plugin（requireUpperBoundDeps）。 -->
             <dependency>
                 <groupId>com.baomidou</groupId>
                 <artifactId>mybatis-plus-spring-boot4-starter</artifactId>
@@ -109,7 +113,7 @@
             <dependency>
                 <groupId>com.baomidou</groupId>
                 <artifactId>mybatis-plus-annotation</artifactId>
-                <version>3.5.16</version>
+                <version>3.5.18.1</version>
             </dependency>
             <dependency>
                 <groupId>com.baomidou</groupId>
@@ -119,17 +123,17 @@
             <dependency>
                 <groupId>com.baomidou</groupId>
                 <artifactId>mybatis-plus-extension</artifactId>
-                <version>3.5.16</version>
+                <version>3.5.18.1</version>
             </dependency>
             <dependency>
                 <groupId>com.baomidou</groupId>
                 <artifactId>mybatis-plus-spring</artifactId>
-                <version>3.5.16</version>
+                <version>3.5.18.1</version>
             </dependency>
             <dependency>
                 <groupId>com.baomidou</groupId>
                 <artifactId>mybatis-plus-jsqlparser</artifactId>
-                <version>3.5.16</version>
+                <version>3.5.18.1</version>
             </dependency>
             <dependency>
                 <groupId>cn.dev33</groupId>
@@ -200,11 +204,14 @@
             </dependency>
         <!-- FastExcel 1.3.0 -> POI 5.4.1 需要 commons-compress >= 1.26 的新
              `putArchiveEntry(ZipArchiveEntry)`；直接依赖（minio 等）把版本拉回 1.24.0
-             时会在Excel 导出触发 NoSuchMethodError（2026-10-17 实测）。显式管理。 -->
+             时会在Excel 导出触发 NoSuchMethodError（2026-10-17 实测）。显式管理。
+             1.28.0：既满足 POI 的 >= 1.26，也是 minio 8.6.0 自己要的版本——
+             此前钉在 1.27.1 时，minio 要求的 1.28.0 被 dependencyManagement 静默降级
+             （同 2026-11-02 MyBatis-Plus 那类「一方要新版、另一方钉旧版」的形状）。 -->
         <dependency>
             <groupId>org.apache.commons</groupId>
             <artifactId>commons-compress</artifactId>
-            <version>1.27.1</version>
+            <version>1.28.0</version>
         </dependency>
             <!-- 安全：8.5.7 及更早受 CVE-2025-59952（CVSS 8.7 High，GHSA-h7rh-xfpj-hpcm）影响——
                  解析 S3 返回的 XML 时会把标签值里的 ${...} 替换成系统属性/环境变量的真值，
@@ -226,10 +233,26 @@
                 <artifactId>cos_api</artifactId>
                 <version>5.6.281</version>
             </dependency>
+            <!-- okhttp 5.1.0 = minio 8.6.0 要求的版本。本项目源码零引用 okhttp API
+                 （只在 jffast-starter-file 里声明一次用于「最近路径优先」覆盖）。
+                 此前钉在 4.12.0（首发时带进来的旧版），把 minio 要的 5.1.0 静默降级了
+                 一个**大版本**——4.x 与 5.x 的 API 不兼容，minio 走网络时才会炸，
+                 与 2026-11-02 MyBatis-Plus 那起事故是同一种形状。
+
+                 ⚠️ okhttp 5 是 Kotlin 多平台布局：okhttp:5.1.0 在 Maven 里是个
+                 **767 字节的空壳 jar**（只有 META-INF，真实类一个都没有），
+                 真正的类在 okhttp-jvm:5.1.0。Gradle 靠 .module 元数据自动换，
+                 Maven 不认那份元数据 → 只依赖 okhttp 会得到一个没有任何类的 jar。
+                 所以 okhttp-jvm 必须显式声明（见 jffast-starter-file/pom.xml）。 -->
             <dependency>
                 <groupId>com.squareup.okhttp3</groupId>
                 <artifactId>okhttp</artifactId>
-                <version>4.12.0</version>
+                <version>5.1.0</version>
+            </dependency>
+            <dependency>
+                <groupId>com.squareup.okhttp3</groupId>
+                <artifactId>okhttp-jvm</artifactId>
+                <version>5.1.0</version>
             </dependency>
             <dependency>
                 <groupId>io.github.resilience4j</groupId>

@@ -18,7 +18,7 @@ package cn.jfspeed.system.service;
 import cn.hutool.core.util.StrUtil;
 import com.baomidou.mybatisplus.core.conditions.Wrapper;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import com.baomidou.mybatisplus.spring.service.impl.ServiceImpl;
 import cn.jfspeed.common.core.base.BaseConstant;
 import cn.jfspeed.redis.util.RedisUtil;
 import cn.jfspeed.system.domain.dto.SysRoleMenuResponse;

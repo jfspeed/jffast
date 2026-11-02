@@ -15,7 +15,7 @@
  */
 package cn.jfspeed.system.service;
 
-import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import com.baomidou.mybatisplus.spring.service.impl.ServiceImpl;
 import cn.jfspeed.system.entity.SysRoleDept;
 import cn.jfspeed.system.mapper.SysRoleDeptMapper;
 import org.springframework.stereotype.Service;

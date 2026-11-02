@@ -1697,7 +1697,7 @@ public class CodeGenerator {
                 "import " + basePkg + "." + packageName + ".mapper." + className + "Mapper;\n" +
                 "import " + basePkg + "." + childPkg + ".entity." + childClassName + ";\n" +
                 "import " + basePkg + "." + childPkg + ".mapper." + childClassName + "Mapper;\n" +
-                "import com.baomidou.mybatisplus.extension.service.IService;\n" +
+                "import com.baomidou.mybatisplus.spring.service.IService;\n" +
                 "import org.springframework.stereotype.Service;\n" +
                 "import org.springframework.transaction.annotation.Transactional;\n\n" +
                 "import java.util.List;\n\n" +

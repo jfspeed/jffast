@@ -52,9 +52,18 @@
             <artifactId>cos_api</artifactId>
             <optional>true</optional>
         </dependency>
+        <!-- okhttp：minio 8.6.0 的 compile 依赖，用到 okhttp3.HttpUrl
+             （MinioClient.Builder.endpoint 有 String / HttpUrl 两个重载，编译期要能看见 HttpUrl）。
+             okhttp 5 是 Kotlin 多平台布局：**okhttp 本身在 Maven 里是空壳 jar**（只有 META-INF），
+             真实类全在 okhttp-jvm 里；Gradle 靠 .module 元数据自动换，Maven 不认那份元数据。
+             所以这里两个都要显式声明，版本由 jffast-bom 统一管理（5.1.0 = minio 8.6.0 要的版本）。 -->
         <dependency>
             <groupId>com.squareup.okhttp3</groupId>
             <artifactId>okhttp</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.squareup.okhttp3</groupId>
+            <artifactId>okhttp-jvm</artifactId>
         </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>

@@ -16,7 +16,7 @@
 package cn.jfspeed.common.data.base;
 
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
-import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import com.baomidou.mybatisplus.spring.service.impl.ServiceImpl;
 import cn.jfspeed.common.core.base.BaseEmptyEntity;
 import cn.jfspeed.common.security.domain.dto.LoginUser;
 import cn.jfspeed.common.data.util.BaseUtil;

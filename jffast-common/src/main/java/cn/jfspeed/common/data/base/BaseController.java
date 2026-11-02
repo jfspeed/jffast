@@ -18,7 +18,7 @@ package cn.jfspeed.common.data.base;
 import cn.jfspeed.common.core.base.BaseEmptyEntity;
 import cn.jfspeed.common.security.util.LoginUtil;
 import cn.jfspeed.common.security.domain.dto.LoginUser;
-import com.baomidou.mybatisplus.extension.service.IService;
+import com.baomidou.mybatisplus.spring.service.IService;
 import org.springframework.beans.factory.annotation.Autowired;
 
 /**
