@@ -255,7 +255,14 @@ docker compose up -d
 > **执行口径**：14 条里**只有第 9 条 `social_bind.sql` 被 `--` 注释**（社交账号绑定，可选功能，默认不执行），其余各条**默认执行**。
 > 示例模块（`demo_example.sql` / `demo_leave_application.sql` / `demo_tenant_example.sql` / `demo_init_data.sql`）与 `ai_knowledge.sql` 属于「可选模块」，但它们的行没有 `--`，**导入时会照常执行**；不需要这些模块的部署自行把对应行注释掉即可（注释掉不影响清单序号）。
 
+> **字符集**：`mysql` 客户端默认按 latin1 解释输入。导入任何带中文的种子前，先在同一会话执行
+> `SET NAMES utf8mb4;`（或启动客户端时加 `--default-character-set=utf8mb4`），否则中文菜单名会被
+> 双重编码成 `å·¥ä½œæµ…` 这类乱码。Docker Compose 的首启播种已由 `deploy/seed-sql.sh` 显式固定 utf8mb4。
+
 ```sql
+-- 固定会话字符集（避免中文种子双重编码）
+SET NAMES utf8mb4;
+
 -- 创建数据库
 CREATE DATABASE jffast DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci;
 
@@ -486,7 +493,7 @@ mvn clean package -DskipTests
 ```bash
 mysql -uroot -p -e "CREATE DATABASE IF NOT EXISTS jffast DEFAULT CHARACTER SET utf8mb4;"
 # 导入清单与顺序 = 上方「快速开始 → 2. 初始化数据库」（唯一权威，此处不复制第二份）
-#   命令形态：mysql -uroot -p jffast < sql/<清单里的文件>.sql
+#   命令形态：mysql --default-character-set=utf8mb4 -uroot -p jffast < sql/<清单里的文件>.sql
 ```
 
 > 两条容易漏的（同上方清单里的注释，这里只重述后果）：

@@ -47,8 +47,11 @@ RSAUtil.generateKey();  // 返回 [publicKey, privateKey]
 本机 MySQL 的命令形态：
 
 ```bash
-mysql -h 127.0.0.1 -uroot -ptest1234 jffast < sql/<清单里的文件>.sql
+mysql --default-character-set=utf8mb4 -h 127.0.0.1 -uroot -ptest1234 jffast < sql/<清单里的文件>.sql
 ```
+
+> 字符集不是可选项：`mysql` 客户端默认 latin1，不加 `--default-character-set=utf8mb4` 时
+> UTF-8 种子会被服务端按 latin1 转码，中文菜单名落库即双重编码（`å·¥ä½œæµ…`）。
 
 部署侧另有两条必须知道的事实：
 
@@ -83,7 +86,7 @@ docker compose up -d   # 启动 mysql + redis
 容器内 MySQL 用管道逐条导入，命令形态：
 
 ```bash
-docker exec -i jffast-mysql mysql -uroot -ptest1234 jffast < sql/<清单里的文件>.sql
+docker exec -i jffast-mysql mysql --default-character-set=utf8mb4 -uroot -ptest1234 jffast < sql/<清单里的文件>.sql
 ```
 
 > ⚠️ 别在 `docker exec -it` 进容器后用 `SOURCE sql/xxx.sql`：文件在宿主机，容器里没有，
@@ -142,6 +145,10 @@ docker compose -f deploy/docker-compose.yml --env-file deploy/.env up -d --build
 2026-10-29 起补齐到这里；此前只挂 01–08，同一句「照文档从零装」在 Docker 下会少 4 张 demo 表、
 5 张 AI 表、2 段菜单种子与 1 个示例任务。不需要示例模块 / AI 知识库的部署，
 把 `10`–`14` 对应行注释掉即可（注释不影响其余编号与顺序）。
+
+> **播种字符集**：播种由 `deploy/seed-sql.sh` 统一执行（SQL 文件挂在 `/seed-sql`），脚本显式用
+> `mysql --default-character-set=utf8mb4`。不要把这些 `.sql` 改挂回 `/docker-entrypoint-initdb.d`：
+> 官方 initdb 的客户端不声明字符集（默认 latin1），中文菜单名会被双重编码成 `å·¥ä½œæµ…`。
 启动后访问：http://localhost:7200/jffast-api/swagger-ui.html
 
 > ⚠ **首启后必须核对播种真的跑完了。** MySQL 官方镜像的 initdb 是「任一脚本报错即中止」，
@@ -164,7 +171,7 @@ docker compose -f deploy/docker-compose.yml --env-file deploy/.env up -d --build
 > 查不到就删卷重来：`docker compose down -v` 后再 `up -d`。
 > 自己补挂 SQL 时同理：**被播种的文件里不要留裸 `ALTER TABLE … ADD COLUMN`**（新库的
 > `CREATE TABLE` 已含该列 → Duplicate column name → 其后全部脚本一起被跳过）；
-> 存量升级另建幂等的 `*_migrate_*.sql`（先查 `information_schema` 再 ALTER），且不挂进 initdb。
+> 存量升级另建幂等的 `*_migrate_*.sql`（先查 `information_schema` 再 ALTER），且不挂进 `/seed-sql`。
 
 ### 3. 起前端栈（jffast-ui 仓库）
 
@@ -237,8 +244,8 @@ compose 只是一种用法。两个镜像都是自包含、全部配置走环境
 - **前端镜像的 `RESOLVER`**：镜像内的 nginx 在**运行时**解析上游主机名（不是启动即解析），
   所以必须给一个可用的 DNS。Docker 默认 `127.0.0.11`；**K8s 必须改成集群 DNS**
   （例如 `10.96.0.10`，见 Pod 内 `/etc/resolv.conf`），否则所有接口 502。
-- **SQL 播种**：把 `sql/` 挂进 `/docker-entrypoint-initdb.d` 依赖 MySQL 官方镜像的机制，只在 compose 下生效；
-  K8s 请用 Job / initContainer / migration 自行导入。
+- **SQL 播种**：compose 把 `sql/` 里清单内的文件挂进 `/seed-sql`，由 `seed-sql.sh` 显式以 utf8mb4 导入；
+  该机制只在 compose 下生效。K8s 请用 Job / initContainer / migration 自行导入，并同样固定 utf8mb4 客户端。
 
 ---
 

@@ -51,14 +51,18 @@ services:
       - "127.0.0.1:${MYSQL_HOST_PORT:-3306}:3306"
     volumes:
       - mysql-data:/var/lib/mysql
+      # 首启播种由 00-seed-sql.sh 统一执行（显式 utf8mb4 客户端；官方 initdb 的
+      # docker_process_sql 不传字符集，会把中文种子双重编码）。SQL 文件因此挂到
+      # /seed-sql 而不是 /docker-entrypoint-initdb.d（后者会把 .sql 也直接执行一遍）。
+      - ./seed-sql.sh:/docker-entrypoint-initdb.d/00-seed-sql.sh:ro
       # ⚠ 播种顺序的唯一权威 = 仓根 README.md「快速开始 → 2. 初始化数据库」的 SOURCE 列表
       #   （14 条，按行序即序号 1–14，`--` 注释掉的可选行同样占序号）；
       #   下面 01–14 就是那份清单（编号 = 清单行序），与 README 默认执行口径一致。
       #   改那边的清单要同时改这里；在这里另立一份顺序 = 第二事实源。
       #
       # 只挂「文件」不挂整个 sql/ 目录：
-      #   sql/ 下还有 quartz.sql 等不在清单里的脚本，整目录挂进去会被 initdb 全量执行
-      #   （且按文件名排序，不等于依赖顺序）。这里用文件级挂载 + 数字前缀显式定序。
+      #   sql/ 下还有 quartz.sql 等不在清单里的脚本，整目录挂进 /seed-sql 会被 00-seed-sql.sh
+      #   全量执行（且按文件名排序，不等于依赖顺序）。这里用文件级挂载 + 数字前缀显式定序。
       #
       # 默认执行 = README 的「13 条」（14 条里只有 social_bind.sql 被 `--` 注释）。
       #   2026-10-29 定案：此前只挂 01–08，与 README 默认执行口径不一致（少 4 张 demo 表 + 5 张 AI 表
@@ -75,21 +79,21 @@ services:
       #     报 Unknown table —— 与「可选」无关，是**默认要导**的。
       # 注意：initdb 只在数据卷为空时执行，改 SQL / 改本清单后需 `docker compose down -v` 才会重跑；
       #   已有卷升级时不会自动补种（首启后请按 deploy/README.md 的「首启后必须核对播种真的跑完了」验一次）。
-      - ../sql/system_sql.sql:/docker-entrypoint-initdb.d/01-system_sql.sql:ro
-      - ../sql/flowable_schema/flowable_mysql_all.sql:/docker-entrypoint-initdb.d/02-flowable_mysql_all.sql:ro
-      - ../sql/system_init_data.sql:/docker-entrypoint-initdb.d/03-system_init_data.sql:ro
-      - ../sql/sys_post.sql:/docker-entrypoint-initdb.d/04-sys_post.sql:ro
-      - ../sql/sys_task.sql:/docker-entrypoint-initdb.d/05-sys_task.sql:ro
-      - ../sql/sys_file.sql:/docker-entrypoint-initdb.d/06-sys_file.sql:ro
-      - ../sql/sys_notification_template.sql:/docker-entrypoint-initdb.d/07-sys_notification_template.sql:ro
-      - ../sql/flow_sql.sql:/docker-entrypoint-initdb.d/08-flow_sql.sql:ro
+      - ../sql/system_sql.sql:/seed-sql/01-system_sql.sql:ro
+      - ../sql/flowable_schema/flowable_mysql_all.sql:/seed-sql/02-flowable_mysql_all.sql:ro
+      - ../sql/system_init_data.sql:/seed-sql/03-system_init_data.sql:ro
+      - ../sql/sys_post.sql:/seed-sql/04-sys_post.sql:ro
+      - ../sql/sys_task.sql:/seed-sql/05-sys_task.sql:ro
+      - ../sql/sys_file.sql:/seed-sql/06-sys_file.sql:ro
+      - ../sql/sys_notification_template.sql:/seed-sql/07-sys_notification_template.sql:ro
+      - ../sql/flow_sql.sql:/seed-sql/08-flow_sql.sql:ro
       # 09 = README 里被 `--` 注释的那条可选行：需要社交账号绑定功能时再放开。
-      # - ../sql/social_bind.sql:/docker-entrypoint-initdb.d/09-social_bind.sql:ro
-      - ../sql/demo_example.sql:/docker-entrypoint-initdb.d/10-demo_example.sql:ro
-      - ../sql/demo_leave_application.sql:/docker-entrypoint-initdb.d/11-demo_leave_application.sql:ro
-      - ../sql/demo_tenant_example.sql:/docker-entrypoint-initdb.d/12-demo_tenant_example.sql:ro
-      - ../sql/demo_init_data.sql:/docker-entrypoint-initdb.d/13-demo_init_data.sql:ro
-      - ../sql/ai_knowledge.sql:/docker-entrypoint-initdb.d/14-ai_knowledge.sql:ro
+      # - ../sql/social_bind.sql:/seed-sql/09-social_bind.sql:ro
+      - ../sql/demo_example.sql:/seed-sql/10-demo_example.sql:ro
+      - ../sql/demo_leave_application.sql:/seed-sql/11-demo_leave_application.sql:ro
+      - ../sql/demo_tenant_example.sql:/seed-sql/12-demo_tenant_example.sql:ro
+      - ../sql/demo_init_data.sql:/seed-sql/13-demo_init_data.sql:ro
+      - ../sql/ai_knowledge.sql:/seed-sql/14-ai_knowledge.sql:ro
     healthcheck:
       # 不用 mysqladmin ping：它认证失败（口令错）也返回 0，形同虚设；
       # 用真认证查询，口令错即 unhealthy
