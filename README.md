@@ -884,4 +884,4 @@ defineExpose({ open, setData });
 | ------------------------------ | --------------- | ---------- |
 | [jffast-ui](https://github.com/jfspeed/jffast-ui) | Base 前端 | Apache 2.0 |
 
-开发约定、命名规范与完整示例（Entity/Service/Controller/DTO/VO、注解、异常码、Starter 开发、数据库、测试、代码生成器）详见 [后端开发规范](docs/开发规范.md)；前端交互（Monorepo、CRUD 工厂、组件/Hooks、权限指令、i18n）详见前端仓 [jffast-ui 前端开发指南](https://github.com/jfspeed/jffast-ui/blob/master/docs/%E5%89%8D%E7%AB%AF%E5%BC%80%E5%8F%91%E6%8C%87%E5%8D%97.md)。
+开发约定、命名规范与完整示例（Entity/Service/Controller/DTO/VO、注解、异常码、Starter 开发、数据库、测试、代码生成器）详见 [后端开发规范](docs/开发规范.md)；前端交互（Monorepo、CRUD 工厂、组件/Hooks、权限指令、i18n）详见前端仓 [jffast-ui 前端开发指南](https://github.com/jfspeed/jffast-ui/blob/main/docs/%E5%89%8D%E7%AB%AF%E5%BC%80%E5%8F%91%E6%8C%87%E5%8D%97.md)。

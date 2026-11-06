@@ -17,7 +17,7 @@ keywords:
   - spring-boot
   - admin
   - framework
-icon: https://raw.githubusercontent.com/jfspeed/jffast-ui/master/public/img/logo.png
+icon: https://raw.githubusercontent.com/jfspeed/jffast-ui/main/public/img/logo.png
 dependencies:
   - name: mysql
     version: "11.1.2"

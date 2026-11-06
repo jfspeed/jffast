@@ -258,7 +258,7 @@ jffast/
 
 ## 获取帮助
 
-- **文档**：[README](README.md) 与 [docs/ 目录](https://github.com/jfspeed/jffast/tree/master/docs)（独立文档站尚未上线）
+- **文档**：[README](README.md) 与 [docs/ 目录](https://github.com/jfspeed/jffast/tree/main/docs)（独立文档站尚未上线）
 - **Issues**：[GitHub Issues](https://github.com/jfspeed/jffast/issues)
 - **讨论**：[GitHub Discussions](https://github.com/jfspeed/jffast/discussions)
 

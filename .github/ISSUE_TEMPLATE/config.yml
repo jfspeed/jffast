@@ -1,7 +1,7 @@
 blank_issues_enabled: false
 contact_links:
   - name: 使用文档
-    url: https://github.com/jfspeed/jffast/tree/master/docs
+    url: https://github.com/jfspeed/jffast/tree/main/docs
     about: 使用问题请先查阅 README 与 docs 目录（独立文档站尚未上线）
   - name: 交流讨论
     url: https://github.com/jfspeed/jffast/discussions
