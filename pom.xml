@@ -69,16 +69,20 @@
         <central-publishing-maven-plugin.version>0.9.0</central-publishing-maven-plugin.version>
         <archunit.version>1.3.0</archunit.version>
         <!--
-          覆盖率门禁（构建闸门）：jacoco:check 的最小行覆盖率，当前 0.10，
+          覆盖率门禁（构建闸门）：jacoco:check 的最小行覆盖率。
+          依据 2026-11-07 实测（mvn clean verify，逐模块 BUNDLE LINE COVEREDRATIO）：
+          全仓合计约 42.2%，但**最低模块 jffast-ai 仅 15.6%**（jffast-demo 16.8%、
+          jffast-starter-file 24.3%）。门禁按模块生效，故阈值取略低于最低模块的 0.14，
+          留约 1.6 个百分点余量（≈7 行，避免一次小改动就误伤）。
           随 Service 层测试补齐逐步上调，改代码只升不降。
           与 docs/开发规范.md §11「新增/修改代码行覆盖率 ≥ 80%」不冲突：
           前者卡整条 CI 流水线，后者是针对每次提交的质量要求。
         -->
-        <jacoco.line.minimum>0.10</jacoco.line.minimum>
+        <jacoco.line.minimum>0.14</jacoco.line.minimum>
         <!--
           skipTests 显式声明为属性，供 jacoco:check 的 <skip> 引用：
           带 -DskipTests 的构建（本地快速迭代常用）不跑测试、无覆盖率数据，
-          check 必须随之跳过，否则 verify 阶段必败（0% < 10% 门槛）。
+          check 必须随之跳过，否则 verify 阶段必败（0% < 0.14 门槛）。
           不带 -DskipTests 的常规构建（CI / mvn install）门禁照常生效。
         -->
         <skipTests>false</skipTests>
