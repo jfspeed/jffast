@@ -57,7 +57,6 @@
           根属性与 BOM 硬编码并存会形成「双真相源」，升级只改一处即静默漂移。
           升级这些依赖请直接改 jffast-bom。
         -->
-        <mapstruct.version>1.5.5.Final</mapstruct.version>
         <lombok.version>1.18.48</lombok.version>
 
         <maven-compiler-plugin.version>3.16.0</maven-compiler-plugin.version>
@@ -144,7 +143,12 @@
                             <path>
                                 <groupId>org.mapstruct</groupId>
                                 <artifactId>mapstruct-processor</artifactId>
-                                <version>${mapstruct.version}</version>
+                                <!--
+                                  不写版本：由 dependencyManagement 里的 jffast-bom 统一解析，
+                                  保证 processor 与运行时 org.mapstruct:mapstruct 永远同版本。
+                                  曾有根属性 1.5.5.Final 与 BOM 1.6.3 并存的双真相源
+                                  （processor < runtime 是 MapStruct 不支持的组合）。
+                                -->
                             </path>
                         </annotationProcessorPaths>
                     </configuration>

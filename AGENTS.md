@@ -228,9 +228,9 @@ domain/       dto（入参）、vo（出参），禁止用 entity 直接接收/�
 
 ## 一、项目概览
 
-- **定位**：基于 Spring Boot 4.1.1 的一站式后台管理框架（公开版，License **Apache 2.0**），「**可插拔 Starter**」设计。
+- **定位**：基于 Spring Boot 的一站式后台管理框架（公开版，License **Apache 2.0**），「**可插拔 Starter**」设计。
 - **License**：Apache 2.0
-- **技术栈**：JDK 21 + Spring Boot 4.1.1 + MyBatis-Plus 3.5.16 + Sa-Token 1.46.0 + springdoc-openapi 3.1.1 + Flowable 8。认证为 **Sa-Token**（非 Spring Security）。
+- **技术栈**：JDK 21 + Spring Boot（版本见根 `pom.xml`）+ MyBatis-Plus / Sa-Token / springdoc-openapi / Flowable（版本见 `jffast-bom`）。认证为 **Sa-Token**（非 Spring Security）。
 - **端口与环境**：后端 **7200**（context-path `/jffast-api`）、前端 Base **7201**；MySQL 8+（库 `jffast`）、Redis 7+。
 
 ### 1.1 顶层目录

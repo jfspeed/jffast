@@ -259,9 +259,32 @@
                 <artifactId>resilience4j-spring-boot4</artifactId>
                 <version>2.4.0</version>
             </dependency>
+            <!-- resilience4j 是一族坐标，必须同版本：spring-boot4:2.4.0 的传递依赖要求
+                 spring6 / micrometer 也是 2.4.0，而 Spring Cloud 的 circuitbreaker BOM 把这两个
+                 钉在 2.3.0。只升 spring-boot4 会变成「依赖族只升一半」（见根 pom enforcer 说明），
+                 Cloud 构建期即报 requireUpperBoundDeps 失败。 -->
+            <dependency>
+                <groupId>io.github.resilience4j</groupId>
+                <artifactId>resilience4j-spring6</artifactId>
+                <version>2.4.0</version>
+            </dependency>
+            <dependency>
+                <groupId>io.github.resilience4j</groupId>
+                <artifactId>resilience4j-micrometer</artifactId>
+                <version>2.4.0</version>
+            </dependency>
             <dependency>
                 <groupId>org.mapstruct</groupId>
                 <artifactId>mapstruct</artifactId>
+                <version>1.6.3</version>
+            </dependency>
+            <!--
+              注解处理器与运行时必须同版本（processor < runtime 是 MapStruct 不支持的组合）。
+              processor 必须在这里显式管理，否则子模块 <annotationProcessorPaths> 省略版本时解析不到。
+            -->
+            <dependency>
+                <groupId>org.mapstruct</groupId>
+                <artifactId>mapstruct-processor</artifactId>
                 <version>1.6.3</version>
             </dependency>
             <dependency>
