@@ -60,6 +60,8 @@ task-files/
 
 ### IDE ###
 *.factorypath
+# OpenIDE 本机运行配置（含明文数据库/Redis 口令，勿入库）
+.openidea/
 
 ### Trae ###
 .trae/
