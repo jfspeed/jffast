@@ -20,7 +20,10 @@ import cn.jfspeed.redis.util.RedisUtil;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import cn.jfspeed.system.domain.dto.SysMenuRequest;
 import cn.jfspeed.common.core.base.BaseConstant;
+import cn.jfspeed.common.core.enums.AuthErrorCode;
+import cn.jfspeed.common.core.exception.BusinessException;
 import cn.jfspeed.common.data.base.BaseService;
+import cn.jfspeed.common.security.util.LoginUtil;
 import cn.jfspeed.system.entity.SysMenu;
 import cn.jfspeed.system.entity.SysRoleMenu;
 import cn.jfspeed.system.mapper.SysMenuMapper;
@@ -269,6 +272,115 @@ public class SysMenuService extends BaseService<SysMenuMapper, SysMenu>{
      */
     public void updateRolePerm(Long roleId){
         sysRoleMenuService.clearRoleCache(roleId);
+    }
+
+    /** 菜单写操作的操作者授权上下文（角色菜单并集 + 有效权限码集合） */
+    public record MenuOperatorContext(Long operatorId, Set<Long> menuIds, Set<String> perms, boolean superAdmin) {
+    }
+
+    /**
+     * 菜单写侧授权校验。
+     *
+     * <p><b>为什么需要它</b>：权限码不是独立配置，而是挂在菜单上的。任何角色绑定了某菜单，
+     * 就按该菜单当前的 {@code perms} 获得权限。若允许持 {@code system:menu:update} 的低权管理员
+     * 随意改写自己角色已绑定菜单的 {@code perms}，他就能把 {@code system:menu:update} 改成
+     * {@code system:config:update} 并重新登录，凭空取得一个自己原本没有的权限码（自提权）。
+     * 角色侧的 {@code validateRoleWrite} 只校验「分配的菜单是不是操作者已有的」，管不到这件事。</p>
+     *
+     * <p><b>规则（非超管）</b>：</p>
+     * <ol>
+     *   <li>只能维护自己角色已绑定的菜单（顶栏菜单由角色授权时补祖先，正常管理员不会缺）；</li>
+     *   <li>改 {@code perms} 时，新权限码必须已经是操作者自己持有的权限码——不能凭空定义新权限；</li>
+     *   <li>清空 {@code perms}（降权）、只改名称/排序/路径等非敏感字段、请求未携带 {@code perms}（null 表示不更新）均放行；</li>
+     *   <li>新增菜单允许指定新 {@code perms}（未绑定角色前不生效，绑定要走角色授权，而角色授权规则 5 同样禁止分配未拥有的菜单），但只能挂在自己已有的菜单下。</li>
+     * </ol>
+     *
+     * <p>超管不受限；这保证「正常维护菜单与权限码」不被破坏——定义新权限码是超管的职责。</p>
+     */
+    static void validateMenuWrite(SysMenu incoming, SysMenu existing, MenuOperatorContext operator) {
+        if (incoming == null || operator == null) {
+            throw forbidden("菜单写操作上下文缺失");
+        }
+        if (operator.superAdmin()) {
+            return;
+        }
+        if (operator.operatorId() == null) {
+            throw forbidden("操作者数据范围异常");
+        }
+        if (existing == null) {
+            Long parentId = incoming.getParentId();
+            if (parentId == null || BaseConstant.PARENT_ID.equals(parentId)) {
+                throw forbidden("无权新建顶级菜单");
+            }
+            if (!operator.menuIds().contains(parentId)) {
+                throw forbidden("无权在该菜单下新增子菜单");
+            }
+            return;
+        }
+        if (!operator.menuIds().contains(existing.getId())) {
+            throw forbidden("无权维护未拥有的菜单");
+        }
+        if (incoming.getPerms() == null) {
+            return;
+        }
+        String oldPerms = StrUtil.trimToEmpty(existing.getPerms());
+        String newPerms = StrUtil.trimToEmpty(incoming.getPerms());
+        if (Objects.equals(oldPerms, newPerms) || StrUtil.isBlank(newPerms)) {
+            return;
+        }
+        if (!operator.perms().contains(newPerms)) {
+            throw forbidden("无权定义未拥有的权限码");
+        }
+    }
+
+    private static BusinessException forbidden(String message) {
+        return new BusinessException(AuthErrorCode.FORBIDDEN.getCode(), message);
+    }
+
+    /** 从登录态构建菜单写操作上下文；任一角色/菜单来源缺失都 fail-closed。 */
+    private MenuOperatorContext loadMenuOperatorContext() {
+        Long operatorId = LoginUtil.getLoginUserId();
+        if (operatorId == null) {
+            throw forbidden("操作者数据范围异常");
+        }
+        if (LoginUtil.isSuperAdmin()) {
+            return new MenuOperatorContext(operatorId, Set.of(), Set.of(), true);
+        }
+        List<Long> roleIds = LoginUtil.getRoleIdList().stream().filter(Objects::nonNull).distinct().toList();
+        if (roleIds.isEmpty()) {
+            throw forbidden("操作者数据范围异常");
+        }
+        Set<Long> menuIds = new HashSet<>();
+        Set<String> perms = new HashSet<>();
+        List<SysMenu> roleMenus = selectMenuListByRoleIds(roleIds);
+        for (SysMenu roleMenu : roleMenus) {
+            if (roleMenu.getId() != null) {
+                menuIds.add(roleMenu.getId());
+            }
+            if (StrUtil.isNotBlank(roleMenu.getPerms())) {
+                perms.add(roleMenu.getPerms().trim());
+            }
+        }
+        return new MenuOperatorContext(operatorId, menuIds, perms, false);
+    }
+
+    /** 新增菜单：先做写侧授权，再落库（落库仍走 {@link #save} 以清理权限缓存）。 */
+    public boolean createMenu(SysMenu menu) {
+        validateMenuWrite(menu, null, loadMenuOperatorContext());
+        return save(menu);
+    }
+
+    /** 修改菜单：先做写侧授权，再落库（落库仍走 {@link #updateById} 以清理权限缓存）。 */
+    public boolean updateMenu(SysMenu menu) {
+        if (menu == null || menu.getId() == null) {
+            throw new BusinessException("菜单不存在");
+        }
+        SysMenu existing = getById(menu.getId());
+        if (existing == null) {
+            throw new BusinessException("菜单不存在");
+        }
+        validateMenuWrite(menu, existing, loadMenuOperatorContext());
+        return updateById(menu);
     }
 
     @Transactional(rollbackFor = Exception.class)

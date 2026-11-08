@@ -131,7 +131,7 @@ public class SysMenuController extends BaseController<SysMenuService,SysMenu> {
         if (menu.getParentId() == null) {
             menu.setParentId(0L);
         }
-        service.save(menu);
+        service.createMenu(menu);
         return R.success();
     }
 
@@ -152,7 +152,7 @@ public class SysMenuController extends BaseController<SysMenuService,SysMenu> {
         if (menu.getId()!=null && menu.getParentId()!=null && menu.getParentId().equals(menu.getId())){
             return R.error("修改失败，上级不能是自己");
         }
-        service.updateById(menu);
+        service.updateMenu(menu);
         return R.success();
     }
 
