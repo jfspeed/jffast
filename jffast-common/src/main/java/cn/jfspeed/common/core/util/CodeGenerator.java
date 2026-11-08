@@ -2704,16 +2704,36 @@ public class CodeGenerator {
     }
 
     public static String getFrontendProjectRoot() {
-        String backendRoot = getProjectRoot();
-        File backendDir = new File(backendRoot);
-        File parentDir = backendDir.getParentFile();
-        if (parentDir != null) {
-            File uiDir = new File(parentDir, "jffast-ui");
-            if (uiDir.exists() && uiDir.isDirectory()) {
-                return uiDir.getAbsolutePath();
-            }
+        File backendDir = new File(getProjectRoot());
+        return resolveFrontendRoot(backendDir, System.getProperty("jffast.codegen.frontend-root"));
+    }
+
+    /**
+     * 解析与当前后端仓同级的那个前端工程目录。
+     * <p>
+     * 不能写死前端仓名：同级可能存在多个前端仓，写死会把生成的代码落到错误的前端仓。
+     * 约定按当前后端仓名推导：{@code xxx-pro} → {@code xxx-ui-pro}，其余 {@code xxx} → {@code xxx-ui}。
+     * 非标准布局可用系统属性 {@code jffast.codegen.frontend-root} 显式指定。
+     */
+    static String resolveFrontendRoot(File backendDir, String configuredFrontendRoot) {
+        if (configuredFrontendRoot != null && !configuredFrontendRoot.trim().isEmpty()) {
+            File configured = new File(configuredFrontendRoot.trim());
+            return configured.isDirectory() ? configured.getAbsolutePath() : null;
         }
-        return null;
+        File parentDir = backendDir.getParentFile();
+        if (parentDir == null) {
+            return null;
+        }
+        File uiDir = new File(parentDir, frontendDirName(backendDir.getName()));
+        return uiDir.isDirectory() ? uiDir.getAbsolutePath() : null;
+    }
+
+    /** 前端仓目录名：{@code app} → {@code app-ui}，{@code app-pro} → {@code app-ui-pro} */
+    static String frontendDirName(String backendName) {
+        if (backendName.endsWith("-pro")) {
+            return backendName.substring(0, backendName.length() - "-pro".length()) + "-ui-pro";
+        }
+        return backendName + "-ui";
     }
 
     public List<String> getSavePaths(String tableName, String packageName, String moduleName) {

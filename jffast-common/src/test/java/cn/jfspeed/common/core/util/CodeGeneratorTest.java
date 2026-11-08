@@ -15,10 +15,15 @@
  */
 package cn.jfspeed.common.core.util;
 
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 import javax.sql.DataSource;
+import java.io.File;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.DatabaseMetaData;
 import java.sql.ResultSet;
@@ -194,6 +199,52 @@ class CodeGeneratorTest {
                     "空包名不得拼出双点非法包名 cn.jfspeed..");
             assertTrue(code.controller().contains("package cn.jfspeed.demo.controller;"),
                     "Controller 包名同样兜底为 demo");
+        }
+    }
+
+    @Test
+    @DisplayName("前端根按当前后端仓名解析：带 -pro 后缀必须落到 *-ui-pro，不得落到普通 *-ui")
+    void frontendRootFollowsBackendRepoName(@TempDir Path tempDir) throws Exception {
+        createDirs(tempDir, "app", "app-ui", "app-pro", "app-ui-pro");
+
+        assertEquals(tempDir.resolve("app-ui").toAbsolutePath().toString(),
+                CodeGenerator.resolveFrontendRoot(tempDir.resolve("app").toFile(), null),
+                "普通后端仓应解析到同级 *-ui");
+        assertEquals(tempDir.resolve("app-ui-pro").toAbsolutePath().toString(),
+                CodeGenerator.resolveFrontendRoot(tempDir.resolve("app-pro").toFile(), null),
+                "带 -pro 后缀的后端仓应解析到同级 *-ui-pro，落到普通 *-ui 就是写进了另一个前端仓");
+        assertNull(CodeGenerator.resolveFrontendRoot(tempDir.resolve("app-demo").toFile(), null),
+                "没有对应前端仓时应返回 null，不得回退到任意同名仓");
+    }
+
+    @Test
+    @DisplayName("前端根支持显式配置：非标准布局走 jffast.codegen.frontend-root")
+    void frontendRootHonoursConfiguredOverride(@TempDir Path tempDir) throws Exception {
+        Path backend = tempDir.resolve("backend");
+        Path frontend = tempDir.resolve("my-ui");
+        Files.createDirectories(backend);
+        Files.createDirectories(frontend);
+        assertEquals(frontend.toAbsolutePath().toString(),
+                CodeGenerator.resolveFrontendRoot(backend.toFile(), frontend.toString()));
+    }
+
+    @Test
+    @DisplayName("运行期解析（当前真实布局）：前端根与当前后端仓匹配")
+    void liveFrontendRootMatchesCurrentRepo() {
+        File backendRoot = new File(CodeGenerator.getProjectRoot());
+        String backendName = backendRoot.getName();
+        String expectedName = backendName.endsWith("-pro")
+                ? backendName.substring(0, backendName.length() - "-pro".length()) + "-ui-pro"
+                : backendName + "-ui";
+        File expectedDir = new File(backendRoot.getParentFile(), expectedName);
+        Assumptions.assumeTrue(expectedDir.isDirectory(),
+                "当前布局没有同级前端仓 " + expectedDir + "，跳过运行期断言");
+        assertEquals(expectedDir.getAbsolutePath(), CodeGenerator.getFrontendProjectRoot());
+    }
+
+    private static void createDirs(Path base, String... names) throws Exception {
+        for (String name : names) {
+            Files.createDirectories(base.resolve(name));
         }
     }
 
