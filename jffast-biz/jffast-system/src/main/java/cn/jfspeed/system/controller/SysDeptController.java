@@ -19,6 +19,7 @@ package cn.jfspeed.system.controller;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -45,7 +46,11 @@ import cn.jfspeed.security.annotation.Idempotent;
 import cn.jfspeed.security.annotation.RateLimit;
 import cn.jfspeed.system.entity.SysDept;
 import cn.jfspeed.system.entity.SysUser;
+import cn.jfspeed.common.core.enums.AuthErrorCode;
+import cn.jfspeed.common.security.util.LoginUtil;
+import cn.jfspeed.system.service.SysDeptScopeQuery;
 import cn.jfspeed.system.service.SysDeptService;
+import cn.jfspeed.system.service.SysUserScopeQuery;
 import cn.jfspeed.system.service.SysUserService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -61,6 +66,14 @@ public class SysDeptController extends BaseController<SysDeptService,SysDept> {
 
     @Resource
     private SysUserService sysUserService;
+
+    /** 受数据权限约束的部门存在性查询（独立 Bean，保证 @DataPermission 切面生效） */
+    @Resource
+    private SysDeptScopeQuery deptScopeQuery;
+
+    /** 受数据权限约束的用户存在性查询，用于 userDeptTree 的越权枚举防护 */
+    @Resource
+    private SysUserScopeQuery userScopeQuery;
 
     @GetMapping("/page")
     @SaCheckPermission(orRole = BaseConstant.ROLE_SUPER_ADMIN, value = "system:dept:view")
@@ -81,7 +94,11 @@ public class SysDeptController extends BaseController<SysDeptService,SysDept> {
     @SaCheckPermission(orRole = BaseConstant.ROLE_SUPER_ADMIN, value = "system:dept:view")
     @Operation(summary = "根据id获取信息")
     public R getById(@PathVariable("id") Long id) {
-        return R.success(service.getById(id));
+        SysDept dept = deptScopeQuery.findVisibleDept(id);
+        if (dept == null) {
+            return R.error(AuthErrorCode.FORBIDDEN.getCode(), "部门不存在或无权操作");
+        }
+        return R.success(dept);
     }
 
     @GetMapping(value = "/roleDeptTree/{roleId}")
@@ -100,6 +117,10 @@ public class SysDeptController extends BaseController<SysDeptService,SysDept> {
     @SaCheckPermission(orRole = BaseConstant.ROLE_SUPER_ADMIN, value = "system:dept:view")
     @Operation(summary = "加载对应用户部门列表树")
     public R userDeptTree(@PathVariable("userId") Long userId) {
+        // 用户可见性必须受数据权限约束：否则任意低权用户可把 userId → deptId 批量映射出来
+        if (userScopeQuery.findVisibleUser(userId) == null) {
+            return R.error(AuthErrorCode.FORBIDDEN.getCode(), "用户不存在或无权操作");
+        }
         Map<String,Object> params = new HashMap<>();
         List<SysDept> deptList = service.list(params);
         Map<String,Object> map = new HashMap<>();
@@ -123,6 +144,15 @@ public class SysDeptController extends BaseController<SysDeptService,SysDept> {
     @Operation(summary = "新增部门")
     public R insert(@RequestBody @Valid SysDeptRequest req) {
         SysDept dept = BeanUtil.copyProperties(req, SysDept.class);
+        Long parentId = dept.getParentId() == null ? BaseConstant.PARENT_ID : dept.getParentId();
+        if (BaseConstant.PARENT_ID.equals(parentId)) {
+            // 顶级部门会改变整棵组织树与数据范围基线，仅超管可建
+            if (!LoginUtil.isSuperAdmin()) {
+                return R.error(AuthErrorCode.FORBIDDEN.getCode(), "无权新建顶级部门");
+            }
+        } else if (deptScopeQuery.findVisibleDept(parentId) == null) {
+            return R.error(AuthErrorCode.FORBIDDEN.getCode(), "父级部门不存在或无权操作");
+        }
         if (service.checkDeptName(dept)) {
             return R.error("名称已存在");
         }
@@ -140,11 +170,32 @@ public class SysDeptController extends BaseController<SysDeptService,SysDept> {
     @Operation(summary = "修改部门")
     public R update(@RequestBody @Valid SysDeptRequest req) {
         SysDept dept = BeanUtil.copyProperties(req, SysDept.class);
-        if (service.checkDeptName(dept)) {
-            return R.error("名称已存在");
-        }
         if (dept.getId()==null){
             return R.error("部门 id 不能为空");
+        }
+        // 先做范围校验，再查名称：避免用「名称已存在」当存在性探针去试探范围外部门
+        SysDept existing = deptScopeQuery.findVisibleDept(dept.getId());
+        if (existing == null) {
+            return R.error(AuthErrorCode.FORBIDDEN.getCode(), "部门不存在或无权操作");
+        }
+        Long parentId = dept.getParentId();
+        if (parentId != null) {
+            Long currentParentId = existing.getParentId() == null ? BaseConstant.PARENT_ID : existing.getParentId();
+            // 只有「上级真的变了」才需要新上级可见：上级不变是日常改名，不能因为
+            // 上级不在本人的数据范围内就把合法改名也拒掉（scope=本部门时上级天然不可见）
+            if (!Objects.equals(parentId, currentParentId)) {
+                if (BaseConstant.PARENT_ID.equals(parentId)) {
+                    // 挂到根级会改变整棵组织树与数据范围基线，仅超管可做
+                    if (!LoginUtil.isSuperAdmin()) {
+                        return R.error(AuthErrorCode.FORBIDDEN.getCode(), "无权将部门挂到根级");
+                    }
+                } else if (deptScopeQuery.findVisibleDept(parentId) == null) {
+                    return R.error(AuthErrorCode.FORBIDDEN.getCode(), "父级部门不存在或无权操作");
+                }
+            }
+        }
+        if (service.checkDeptName(dept)) {
+            return R.error("名称已存在");
         }
         service.updateDept(dept);
         return R.success();
@@ -155,6 +206,9 @@ public class SysDeptController extends BaseController<SysDeptService,SysDept> {
     @SaCheckPermission(orRole = BaseConstant.ROLE_SUPER_ADMIN, value = "system:dept:delete")
     @Operation(summary = "删除部门")
     public R delete(@PathVariable("id") Long id) {
+        if (deptScopeQuery.findVisibleDept(id) == null) {
+            return R.error(AuthErrorCode.FORBIDDEN.getCode(), "部门不存在或无权操作");
+        }
         if (service.hasChildByDeptId(id)) {
             return R.error("存在下级,不允许删除");
         }
