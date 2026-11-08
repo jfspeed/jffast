@@ -16,6 +16,7 @@
 package cn.jfspeed.job.handler;
 
 import cn.hutool.core.util.StrUtil;
+import cn.jfspeed.common.core.context.TenantScopeBridge;
 import cn.jfspeed.job.config.JobProperties;
 import cn.jfspeed.job.domain.JobLogRecord;
 import cn.jfspeed.job.lock.JobLock;
@@ -106,6 +107,7 @@ public class DefaultQuartzJob extends AbstractQuartzJob {
         JobKey key = context.getJobDetail().getKey();
         LocalDateTime endTime = LocalDateTime.now();
         JobLogRecord record = new JobLogRecord();
+        record.setTenantId(currentTenantId());
         record.setJobName(key.getName());
         record.setJobGroup(key.getGroup());
         record.setInvokeTarget(context.getJobDetail().getJobDataMap().getString("invokeTarget"));
@@ -119,5 +121,15 @@ public class DefaultQuartzJob extends AbstractQuartzJob {
             record.setStatus(1);
         }
         store.insertLog(record);
+    }
+
+    /**
+     * 执行线程的租户快照（{@link AbstractQuartzJob} 在 try 之前 attach，`after` 在还原之前调用，
+     * 因此这里取到的就是本次任务归属）。无桥实现（Base 单租户）或平台级任务 ⇒ {@code null}，
+     * 与 {@code sys_job.tenant_id} 的 NULL=平台 语义保持一致，不出现「一处 NULL、一处 0」。
+     */
+    private Long currentTenantId() {
+        TenantScopeBridge bridge = SpringContextHolder.tryGetBean(TenantScopeBridge.class);
+        return bridge == null ? null : bridge.currentTenantId();
     }
 }

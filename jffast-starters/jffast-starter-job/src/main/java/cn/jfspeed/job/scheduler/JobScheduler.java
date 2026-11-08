@@ -16,15 +16,18 @@
 package cn.jfspeed.job.scheduler;
 
 import cn.hutool.core.util.StrUtil;
+import cn.jfspeed.common.core.context.TenantScopeBridge;
 import cn.jfspeed.job.config.JobProperties;
 import cn.jfspeed.job.domain.JobRecord;
 import cn.jfspeed.job.domain.JobTargetInfo;
+import cn.jfspeed.job.handler.AbstractQuartzJob;
 import cn.jfspeed.job.handler.DefaultQuartzJob;
 import cn.jfspeed.job.handler.DisallowConcurrentQuartzJob;
 import cn.jfspeed.job.manager.QuartzManager;
 import cn.jfspeed.job.scanner.JobAnnotationScanner;
 import cn.jfspeed.job.store.JobStore;
 import cn.jfspeed.job.util.JobInvokeUtil;
+import cn.jfspeed.job.util.SpringContextHolder;
 import lombok.extern.slf4j.Slf4j;
 import org.quartz.Job;
 import org.quartz.JobKey;
@@ -320,7 +323,12 @@ public class JobScheduler implements CommandLineRunner, DisposableBean {
                 boolean misfireChanged = !Objects.equals(
                         effectiveMisfirePolicy(quartzManager.getMisfirePolicy(row.getJobName(), row.getJobGroup())),
                         effectiveMisfirePolicy(row.getMisfirePolicy()));
-                if (currentCron == null || firstSync || classChanged || targetChanged || misfireChanged
+                // 租户归属同样只写在 JobDataMap 里：任务从"平台级"改成"某租户"（或反向）而不改 cron 时，
+                // 不重建就会继续按旧归属执行 —— 要么继续全量，要么串到上一个租户。
+                boolean tenantChanged = !Objects.equals(
+                        row.getTenantId(),
+                        quartzManager.getJobDataValue(row.getJobName(), row.getJobGroup(), AbstractQuartzJob.TENANT_KEY));
+                if (currentCron == null || firstSync || classChanged || targetChanged || misfireChanged || tenantChanged
                         || !currentCron.equalsIgnoreCase(row.getCronExpression())) {
                     quartzManager.createJob(row.getJobName(), row.getJobGroup(), row.getCronExpression(),
                             jobClass, buildJobDataMap(row), row.getMisfirePolicy());
@@ -515,6 +523,14 @@ public class JobScheduler implements CommandLineRunner, DisposableBean {
                     + "，本服务（" + appName + "）不执行它");
         }
         try {
+            // 页面「立即执行」发生在请求线程里：任务行若没带租户（SysJob 实体不映射租户列），
+            // 就从当前线程取 —— 否则一次手动触发会退回平台级全量视角。
+            if (row.getTenantId() == null) {
+                TenantScopeBridge bridge = SpringContextHolder.tryGetBean(TenantScopeBridge.class);
+                if (bridge != null) {
+                    row.setTenantId(bridge.currentTenantId());
+                }
+            }
             quartzManager.ensureJobExists(row.getJobName(), row.getJobGroup(), jobClassOf(row),
                     buildJobDataMap(row));
             quartzManager.triggerJob(row.getJobName(), row.getJobGroup());
@@ -560,6 +576,10 @@ public class JobScheduler implements CommandLineRunner, DisposableBean {
         // 共享同一套 QRTZ_ 表时（两个应用连同一个库且 instanceName 相同），删除动作落在共享表上，
         // 没有这个戳就无法判断"这条 trigger 是不是我的" ⇒ 会把兄弟服务刚排好的 trigger 删掉。
         params.put(OWNER_KEY, appName);
+        // 租户归属：非空 ⇒ 执行线程恢复该租户；缺省 ⇒ 平台级任务（执行侧会显式声明全量视角）。
+        if (row.getTenantId() != null) {
+            params.put(AbstractQuartzJob.TENANT_KEY, row.getTenantId());
+        }
         return params;
     }
 

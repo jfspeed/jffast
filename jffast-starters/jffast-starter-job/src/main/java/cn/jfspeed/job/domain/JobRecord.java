@@ -31,6 +31,13 @@ public class JobRecord {
 
     private Long id;
 
+    /**
+     * 任务归属租户（`sys_job.tenant_id`）。
+     * <p>NULL = 平台级任务（老数据 / 由注解登记 / 页面由平台超管创建）：执行时显式清空租户上下文，
+     * 按全量视角运行，并在日志里声明；非 NULL 时执行线程恢复该租户上下文，任务内的 SQL 自动收口到该租户。
+     */
+    private Long tenantId;
+
     /** 任务名称（展示名，唯一键之一：job_name + job_group） */
     private String jobName;
 

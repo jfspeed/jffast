@@ -54,7 +54,7 @@ import java.util.List;
 @Slf4j
 public class JdbcJobStore implements JobStore {
 
-    private static final String COLS = "id, job_name, job_group, invoke_target, cron_expression, "
+    private static final String COLS = "id, tenant_id, job_name, job_group, invoke_target, cron_expression, "
             + "misfire_policy, concurrent, status, service_name, remark";
 
     /** 瞬时故障的冷却时长：冷却期内不再重试（避免刷屏），到期后自动恢复 */
@@ -121,9 +121,10 @@ public class JdbcJobStore implements JobStore {
             return false;
         }
         try {
-            jdbcTemplate.update("INSERT INTO sys_job (id, job_name, job_group, invoke_target, cron_expression, "
-                            + "misfire_policy, concurrent, status, service_name, remark) VALUES (?,?,?,?,?,?,?,?,?,?)",
+            jdbcTemplate.update("INSERT INTO sys_job (id, tenant_id, job_name, job_group, invoke_target, cron_expression, "
+                            + "misfire_policy, concurrent, status, service_name, remark) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
                     IdUtil.getSnowflakeNextId(),
+                    record.getTenantId(),
                     record.getJobName(),
                     record.getJobGroup(),
                     record.getInvokeTarget(),
@@ -168,9 +169,10 @@ public class JdbcJobStore implements JobStore {
             return;
         }
         try {
-            jdbcTemplate.update("INSERT INTO sys_job_log (id, job_name, job_group, invoke_target, status, "
-                            + "error_msg, start_time, end_time, duration) VALUES (?,?,?,?,?,?,?,?,?)",
+            jdbcTemplate.update("INSERT INTO sys_job_log (id, tenant_id, job_name, job_group, invoke_target, status, "
+                            + "error_msg, start_time, end_time, duration) VALUES (?,?,?,?,?,?,?,?,?,?)",
                     IdUtil.getSnowflakeNextId(),
+                    record.getTenantId(),
                     record.getJobName(),
                     record.getJobGroup(),
                     record.getInvokeTarget(),
@@ -195,6 +197,8 @@ public class JdbcJobStore implements JobStore {
     private JobRecord mapRow(ResultSet rs, int rowNum) throws SQLException {
         JobRecord r = new JobRecord();
         r.setId(rs.getLong("id"));
+        Object tenantId = rs.getObject("tenant_id");
+        r.setTenantId(tenantId == null ? null : ((Number) tenantId).longValue());
         r.setJobName(rs.getString("job_name"));
         r.setJobGroup(rs.getString("job_group"));
         r.setInvokeTarget(rs.getString("invoke_target"));

@@ -27,6 +27,13 @@ import java.time.LocalDateTime;
 @Data
 public class JobLogRecord {
 
+    /**
+     * 执行线程的租户快照；{@code null} = 平台级（与 {@code sys_job.tenant_id} 的 NULL 语义一致）。
+     * <p>不写会让租户任务的日志落 NULL：读侧被追加 {@code tenant_id = <本租户>}，
+     * 租户在自己的任务日志页反而看不到自己任务的执行记录。
+     */
+    private Long tenantId;
+
     private String jobName;
 
     private String jobGroup;

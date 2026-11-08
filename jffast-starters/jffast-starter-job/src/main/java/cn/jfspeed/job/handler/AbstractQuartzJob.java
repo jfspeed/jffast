@@ -17,6 +17,8 @@ package cn.jfspeed.job.handler;
 
 import java.time.LocalDateTime;
 
+import cn.jfspeed.common.core.context.TenantScopeBridge;
+import cn.jfspeed.job.util.SpringContextHolder;
 import org.quartz.Job;
 import org.quartz.JobExecutionContext;
 import org.quartz.JobExecutionException;
@@ -28,6 +30,9 @@ import org.slf4j.LoggerFactory;
  */
 public abstract class AbstractQuartzJob implements Job {
 
+    /** {@code JobDataMap} 中的租户归属键（由 {@code JobScheduler} 写入；缺省 = 平台级任务） */
+    public static final String TENANT_KEY = "tenantId";
+
     protected static final Logger log = LoggerFactory.getLogger(AbstractQuartzJob.class);
 
     @Override
@@ -35,6 +40,19 @@ public abstract class AbstractQuartzJob implements Job {
         JobExecutionContextHolder.set(context);
         LocalDateTime startTime = LocalDateTime.now();
         Exception exception = null;
+        TenantScopeBridge bridge = SpringContextHolder.tryGetBean(TenantScopeBridge.class);
+        Long previousTenantId = bridge == null ? null : bridge.currentTenantId();
+        Long tenantId = resolveTenantId(context);
+        if (bridge != null) {
+            if (tenantId == null) {
+                // 不允许「静默全量」：平台级任务必须在日志里显式声明，避免后续误以为它跑在某个租户下
+                log.info("【定时任务】{}.{} 无租户归属，按平台级全量视角执行（显式声明）",
+                        context.getJobDetail().getKey().getGroup(), context.getJobDetail().getKey().getName());
+                bridge.detach();
+            } else {
+                bridge.attach(tenantId);
+            }
+        }
         try {
             before(context);
             doExecute(context);
@@ -45,12 +63,33 @@ public abstract class AbstractQuartzJob implements Job {
         } finally {
             after(context, startTime, exception);
             JobExecutionContextHolder.clear();
+            if (bridge != null) {
+                if (previousTenantId == null) {
+                    bridge.detach();
+                } else {
+                    bridge.attach(previousTenantId);
+                }
+            }
         }
         if (exception != null) {
             if (exception instanceof JobExecutionException) {
                 throw (JobExecutionException) exception;
             }
             throw new JobExecutionException(exception);
+        }
+    }
+
+    /** 任务行上的租户归属（JobDataMap 里的 {@link #TENANT_KEY}）；缺省 = 平台级 */
+    private static Long resolveTenantId(JobExecutionContext context) {
+        Object raw = context.getMergedJobDataMap().get(TENANT_KEY);
+        if (raw == null) {
+            return null;
+        }
+        try {
+            return Long.valueOf(raw.toString());
+        } catch (NumberFormatException e) {
+            log.warn("【定时任务】租户归属值无法解析为数字，按平台级处理: {}", raw);
+            return null;
         }
     }
 
