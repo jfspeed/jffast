@@ -20,7 +20,9 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * 数据权限 SQL 片段 ThreadLocal 上下文单元测试。
@@ -52,5 +54,20 @@ class DataScopeContextTest {
         DataScopeContext.set("x");
         DataScopeContext.set(null);
         assertNull(DataScopeContext.get());
+    }
+
+    @Test
+    @DisplayName("已解析标记独立于片段：标记后片段仍可为 null，clear 一并清掉")
+    void resolvedMarkerIsIndependentOfFragment() {
+        DataScopeContext.markResolved();
+        assertTrue(DataScopeContext.isResolved());
+        assertNull(DataScopeContext.get());
+
+        DataScopeContext.clearResolved();
+        assertFalse(DataScopeContext.isResolved());
+
+        DataScopeContext.markResolved();
+        DataScopeContext.clear();
+        assertFalse(DataScopeContext.isResolved());
     }
 }

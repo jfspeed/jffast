@@ -29,15 +29,26 @@
         ORDER BY id
     </select>
 
+    <!--
+      子孙部门（含自身）。用递归 CTE，不再用用户变量（@ids）：
+      旧写法把 `@ids AS _ids` 与 `(SELECT @ids := ...)` 放在同一层 select 列表，
+      新连接首个 SQL 时 @ids 初始为 NULL，`WHERE @ids IS NOT NULL` 会把所有行滤掉，
+      导致 data_scope=2 的用户拿到空结果、setDataScope 落 NONE（什么部门都看不到）。
+      递归深度由 cte_max_recursion_depth（默认 1000）兜底；成环已由 updateDept 拒绝。
+    -->
     <select id="childList" resultType="cn.jfspeed.system.entity.SysDept">
-        SELECT id,`dept_name`
-        FROM(
-            SELECT @ids AS _ids,(SELECT @ids := GROUP_CONCAT(id) FROM sys_dept WHERE FIND_IN_SET(parent_id, @ids)) AS cids
-            FROM sys_dept,(SELECT @ids := #{parentId}) b
-            WHERE @ids IS NOT NULL
-        ) a,sys_dept b
-        WHERE FIND_IN_SET(b.id,a._ids)
-        ORDER BY LEVEL,id
+        WITH RECURSIVE dept_tree AS (
+            SELECT id, parent_id, dept_name, `level`
+            FROM sys_dept
+            WHERE id = #{parentId}
+            UNION ALL
+            SELECT d.id, d.parent_id, d.dept_name, d.`level`
+            FROM sys_dept d
+            JOIN dept_tree t ON d.parent_id = t.id
+        )
+        SELECT id, `dept_name`
+        FROM dept_tree
+        ORDER BY `level`, id
     </select>
 
 </mapper>

@@ -97,9 +97,9 @@ class DataPermissionSqlBuilderMetadataTest {
     }
 
     @Test
-    @DisplayName("build：无登录用户/空数据范围返回 null")
-    void buildReturnsNullWithoutScope() {
-        assertNull(DataPermissionSqlBuilder.build(null, "d.id", "u.id", true));
+    @DisplayName("build：无登录用户 fail-closed（1 = 0），不受限用户（空数据范围）返回 null")
+    void buildFailsClosedWithoutLoginUser() {
+        assertEquals("1 = 0", DataPermissionSqlBuilder.build(null, "d.id", "u.id", true));
 
         LoginUser empty = new LoginUser();
         empty.setDataScope(Map.of());

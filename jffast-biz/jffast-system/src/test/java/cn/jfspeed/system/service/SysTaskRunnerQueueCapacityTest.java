@@ -16,6 +16,7 @@
 package cn.jfspeed.system.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -67,6 +68,7 @@ class SysTaskRunnerQueueCapacityTest {
         CountDownLatch releaseWorkers = new CountDownLatch(1);
         AtomicReference<String> taskScope = new AtomicReference<>();
         AtomicReference<Long> taskOperator = new AtomicReference<>();
+        AtomicReference<Boolean> taskResolved = new AtomicReference<>(false);
         try {
             for (int i = 0; i < 2; i++) {
                 runner.submit(null, () -> {
@@ -85,15 +87,18 @@ class SysTaskRunnerQueueCapacityTest {
             DataScopeContext.set("caller-scope");
             AuditContext.setUserId(99L);
 
-            runner.submit(new SysTaskContext(7L, "snapshot-scope"), () -> {
+            runner.submit(new SysTaskContext(7L, "snapshot-scope", true), () -> {
                 taskScope.set(DataScopeContext.get());
                 taskOperator.set(AuditContext.getUserId());
+                taskResolved.set(DataScopeContext.isResolved());
             });
 
             assertEquals("snapshot-scope", taskScope.get());
             assertEquals(7L, taskOperator.get());
+            assertTrue(taskResolved.get(), "已解析标记必须传入工作线程");
             assertEquals("caller-scope", DataScopeContext.get());
             assertEquals(99L, AuditContext.getUserId());
+            assertFalse(DataScopeContext.isResolved(), "调用线程的已解析标记必须还原");
         } finally {
             releaseWorkers.countDown();
             DataScopeContext.clear();

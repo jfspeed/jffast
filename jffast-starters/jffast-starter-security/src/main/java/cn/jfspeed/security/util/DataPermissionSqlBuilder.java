@@ -49,10 +49,16 @@ public final class DataPermissionSqlBuilder {
 
     /**
      * 按字段配置构建数据权限片段
+     *
+     * <p>无登录态时返回 {@code 1 = 0} 而不是 {@code null}：{@code null} 在
+     * {@code DataScopeInnerInterceptor} 里等同「不加条件」，任何拿到空上下文的地方
+     * （漏配切面的新入口、异步线程）都会静默退化成全量查询。数据权限必须 fail-closed：
+     * 判断不出「谁在看」，就一行也不给看。异步任务需要「不受限」的结果时，由提交线程
+     * 判定后打上 {@code DataScopeContext} 的已解析标记，而不是让工作线程拿空用户重算。</p>
      */
     public static String build(LoginUser user, String deptField, String userField, boolean useId) {
         if (user == null) {
-            return null;
+            return "1 = 0";
         }
         Map<String, Object> dataScope = user.getDataScope();
         if (dataScope == null || dataScope.isEmpty()) {

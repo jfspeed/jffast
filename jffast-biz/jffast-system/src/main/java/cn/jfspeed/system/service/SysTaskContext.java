@@ -21,9 +21,13 @@ package cn.jfspeed.system.service;
  * 工作线程没有登录态，{@code @DataPermission} 切面拿到的是空用户；若不在提交时快照，
  * 导出会退化为无数据权限的全量查询。操作者用于审计字段（create_by/update_by）回填。
  *
- * @param operatorId   提交任务的登录用户 ID，可为 null（无登录态时）
- * @param dataScopeSql 提交时按方法注解元数据算出的数据权限 SQL 片段，null 表示该任务不带数据权限
+ * @param operatorId    提交任务的登录用户 ID，可为 null（无登录态时）
+ * @param dataScopeSql  提交时按方法注解元数据算出的数据权限 SQL 片段，null 表示该任务不带数据权限
+ * @param scopeResolved 提交线程是否已按注解元数据判定过数据权限：
+ *                      {@code true} 时工作线程不再重算（{@code dataScopeSql} 为 null 代表
+ *                      「已判定为不受限」，不会被无登录态误判成拒绝）；
+ *                      {@code false} 时工作线程若调用 {@code @DataPermission} 方法按无上下文处理（拒绝）
  * @author jffast
  */
-public record SysTaskContext(Long operatorId, String dataScopeSql) {
+public record SysTaskContext(Long operatorId, String dataScopeSql, boolean scopeResolved) {
 }

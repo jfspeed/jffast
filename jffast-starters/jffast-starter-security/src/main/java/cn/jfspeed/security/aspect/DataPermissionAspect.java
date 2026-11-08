@@ -31,7 +31,9 @@ import org.springframework.web.context.request.ServletRequestAttributes;
 /**
  * 数据权限切面：把注解元数据对应的 SQL 片段放进 {@link DataScopeContext}。
  * <p>异步任务会预先在工作线程恢复提交时快照的片段；本切面在无登录态时必须保留该片段
- * （而不是无条件清空），退出时再恢复进入前的值，避免嵌套调用与 CallerRunsPolicy 互相污染。</p>
+ * （而不是无条件清空），退出时再恢复进入前的值，避免嵌套调用与 CallerRunsPolicy 互相污染。
+ * <p>无登录态且没有「已解析」标记时一律拒绝（{@code 1 = 0}）：判断不出查看者身份，
+ * 就不能让查询退化成全量。
  *
  * @author jffast
  */
@@ -42,8 +44,12 @@ public class DataPermissionAspect {
     @Around("@annotation(dataPermission)")
     public Object around(ProceedingJoinPoint point, DataPermission dataPermission) throws Throwable {
         String previous = DataScopeContext.get();
+        boolean previousResolved = DataScopeContext.isResolved();
         try {
-            String sqlFragment = DataPermissionSqlBuilder.build(LoginUtil.getLoginUser(), dataPermission);
+            String sqlFragment = null;
+            if (LoginUtil.getLoginUser() != null || !previousResolved) {
+                sqlFragment = DataPermissionSqlBuilder.build(LoginUtil.getLoginUser(), dataPermission);
+            }
             if (StrUtil.isNotBlank(sqlFragment)) {
                 DataScopeContext.set(sqlFragment);
                 publishRequestAttribute(sqlFragment);
@@ -54,6 +60,9 @@ public class DataPermissionAspect {
                 DataScopeContext.set(previous);
             } else {
                 DataScopeContext.clear();
+            }
+            if (previousResolved) {
+                DataScopeContext.markResolved();
             }
         }
     }

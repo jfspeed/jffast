@@ -247,7 +247,7 @@ public class SysUserController extends BaseController<SysUserService,SysUser> {
                 SysUserService.class, "listForExport", Map.class, int.class);
         Long operatorId = LoginUtil.getLoginUserId();
         SysTask task = sysTaskService.createTask("export", "user", "用户异步导出");
-        sysTaskRunner.submit(new SysTaskContext(operatorId, dataScopeSql), () -> {
+        sysTaskRunner.submit(new SysTaskContext(operatorId, dataScopeSql, true), () -> {
             sysTaskService.markRunning(task.getId());
             try {
                 List<SysUser> list = service.listForExport(map, ASYNC_EXPORT_MAX_ROWS);
@@ -291,7 +291,7 @@ public class SysUserController extends BaseController<SysUserService,SysUser> {
         SysTask task = sysTaskService.createTask("import", "user", "用户异步导入");
         Path temp = sysTaskRunner.taskDir().resolve("import-" + task.getId() + ".xlsx");
         file.transferTo(temp.toFile());
-        sysTaskRunner.submit(new SysTaskContext(LoginUtil.getLoginUserId(), null), () -> {
+        sysTaskRunner.submit(new SysTaskContext(LoginUtil.getLoginUserId(), null, false), () -> {
             sysTaskService.markRunning(task.getId());
             try {
                 List<SysUserImportExcel> rows;
