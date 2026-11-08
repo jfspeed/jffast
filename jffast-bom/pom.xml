@@ -180,7 +180,7 @@
             <dependency>
                 <groupId>cn.hutool</groupId>
                 <artifactId>hutool-all</artifactId>
-                <version>5.8.43</version>
+                <version>5.8.48</version>
             </dependency>
         <!-- Hutool PinyinUtil 的拼音引擎（TinyPinyin，Apache-2.0）：createDictCode 用，缺它 500（2026-10-17 实测） -->        <!-- Hutool PinyinUtil 的拼音引擎（Bopomofo4j，Apache-2.0）：「生成代号」。
              2026-10-17 实测：TinyPinyin 引擎在 hutool 5.8.43 下 getFirstLetter 对中文返回空；
