@@ -108,11 +108,11 @@
 > **关于验证码**：登录验证码按失败次数自动启用——同一账号连续输错 2 次后，登录页自动出现图形验证码（`/sys/needCaptcha` 判定 + `/sys/getCode` 取图），无需额外配置。
 >
 > **文件存储已知限制（jffast-starter-file）**：本地存储上传路径强制追加时间戳子目录（落盘路径不可精确预测，需要确定性路径请自建 `XxxFileService`）；`delete()` 仅支持单文件；本地存储根目录 `jffast.file.storage.local.path` 同时决定上传根与 `/upload/**` 静态映射，两处必须一致，改配置时请整体替换。
-> 另有一条**安全边界**要记住：`/upload/**` 在免登录白名单里，所以存储根内的每个文件都对外公开可下载（这是「头像/附件要能被 `<img>` 直接引用」的代价）。因此服务端生成的敏感文件（如异步导出的用户表格）必须写在根目录之外——`jffast.system.task.file-dir` 默认 `./task-files`，配成根内子目录会启动失败。
+> 另有一条**安全边界**要记住：`/upload/**` 只校验登录态、不校验归属（2026-11-09 起不再匿名），因此任何登录用户拿到路径都能下载存储根内的文件；服务端生成的敏感文件（如异步导出的用户表格）必须写在根目录之外——`jffast.system.task.file-dir` 默认 `./task-files`，配成根内子目录会启动失败。
 >
 > **数据权限 / 社交账号绑定边界（Base）**：Base 内置 **5 级**数据权限（全部 / 本级及下 / 本级 / 仅本人 / 自定义，`@DataPermission` 注解触发；拦截器由 `jffast.mybatis.data-scope.enabled` 控制，缺省即装配）与 GitHub/Gitee/Microsoft 个人 OAuth2 **账号绑定**（授权跳转 / 回调 / 绑定 / 解绑已内置；本框架不提供「凭社交账号直接登录」——那一步需要你在绑定关系之上自行签发会话）。
 >
-> **异步任务结果文件（单实例）**：导入导出任务的中间文件写在**文件存储根之外**的工作目录 `./task-files`（`jffast.system.task.file-dir`，可经 `JFFAST_TASK_FILE_DIR` 覆盖）——存储根经 `/upload/**` 免登录静态映射，敏感产物落在里面等于公开下载，配错会启动失败。任务归属按 `create_by` 隔离。默认形态只适用于**单实例**：多实例部署必须把该目录挂成共享卷或改用对象存储，否则在另一实例下载会返回「文件不存在或已清理」。
+> **异步任务结果文件（单实例）**：导入导出任务的中间文件写在**文件存储根之外**的工作目录 `./task-files`（`jffast.system.task.file-dir`，可经 `JFFAST_TASK_FILE_DIR` 覆盖）——存储根经 `/upload/**` 静态映射（只校验登录、不做归属校验），敏感产物落在里面等于对所有登录用户开放，配错会启动失败。任务归属按 `create_by` 隔离。默认形态只适用于**单实例**：多实例部署必须把该目录挂成共享卷或改用对象存储，否则在另一实例下载会返回「文件不存在或已清理」。
 
 ### 前端功能
 
@@ -518,7 +518,7 @@ java -jar jffast-boot/target/jffast-boot.jar
 - 健康检查：`curl http://localhost:7200/jffast-api/actuator/health`
 - 初始口令三态：`JFFAST_INIT_PASSWORD` 有值用该值；留空则随机生成并打印到启动日志（只显示一次）；未注入时使用公开测试值 `test1234` 并打 WARN（仅本地体验）。
 - 本地文件存储落在工作目录 `./upload`，nginx 反代需放行 `/upload/` 并放开 `client_max_body_size`（后端上限 20MB）。
-- 异步导入导出的临时 xlsx 落在工作目录 `./task-files`（可用 `JFFAST_TASK_FILE_DIR` 改），**不要**指到 `./upload` 里面：`upload/` 被 `/upload/**` 免登录静态映射，落进去的文件等于对外公开下载；指错会直接启动失败。该目录不需要 nginx 放行，只经 `/sys/task/download/{id}`（登录 + 归属校验）读取。
+- 异步导入导出的临时 xlsx 落在工作目录 `./task-files`（可用 `JFFAST_TASK_FILE_DIR` 改），**不要**指到 `./upload` 里面：`upload/` 被 `/upload/**` 静态映射（只校验登录、不做归属校验），落进去的文件等于对所有登录用户开放；指错会直接启动失败。该目录不需要 nginx 放行，只经 `/sys/task/download/{id}`（登录 + 归属校验）读取。
 
 **4）前端**只打 `dist/` 再用自己的 nginx 托管，见 `jffast-ui` 仓 README 的「部署 → 方式 B」。
 
