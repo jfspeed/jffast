@@ -356,7 +356,7 @@ jffast (pom)
 | 新建类 / DTO / 工具 | 先搜索确认同名类不存在，类名自证语义 | 先建文件后查重 |
 | 加权限 / 限流 / 操作日志 | `@SaCheckPermission` + `@RateLimit("default")` + `@SLog` 三件套 | 裸接口（权限会被 `EndpointPermissionAnnotationTest` 拦） |
 | 规范存疑 / 自查 | 跑 `jffast-boot` 的 `ArchitectureConventionTest` + `EndpointPermissionAnnotationTest`，红了按提示信息改 | 只读文档不验证 |
-| 生成代码在 JAR/容器里 | 改用 `POST /sys/codegen/download-zip` 打包下载 | 依赖 `save-local`（JAR 下被拒绝） |
+| 生成代码在 JAR/容器里 | 改用 `POST /sys/codegen/download-zip` 打包下载；条目布局与 `save-local` 同源（`buildManifest` 单点决定），解压到后端仓/前端仓的同级父目录；旧前缀 `src/main/java/` / `frontend/src/` / `sql/` 已废弃，迁移对照见 `docs/开发规范.md` §24 | 依赖 `save-local`（JAR 下被拒绝）；按旧前缀解压（会写到错误位置） |
 | 完成定义（改框架源码 common/starters/biz 收尾） | 唯一门禁：`mvn test` 全绿——已含 `ArchitectureConventionTest` / `EndpointPermissionAnnotationTest` / 反射契约等规范测试；改了公共约定再同步 `docs/开发规范.md` / `CHANGELOG.md` 与相关模块 README | 声称「已完成」前必须实际运行测试并贴结果；**不**新增本仓之外的门禁命令 |
 
 ## 五、关键文件速查

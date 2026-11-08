@@ -369,6 +369,49 @@ class CodeGeneratorTest {
     }
 
 
+    @Test
+    @DisplayName("表名白名单：sys_user / biz_order_item 放行，大写、数字开头、路径字符一律拒绝且落点不越界")
+    void tableNameWhitelistAllowsUnderscore(@TempDir Path tempDir) throws Exception {
+        Path root = tempDir.resolve("ws");
+        Path backend = root.resolve("app");
+        Path frontend = root.resolve("app-ui");
+        Files.createDirectories(backend.resolve("jffast-biz/jffast-demo"));
+        Files.createDirectories(frontend.resolve("src"));
+        Files.writeString(backend.resolve("pom.xml"), "<project/>");
+
+        CodeGenerator generator = newGenerator();
+        Path backendRoot = backend.toAbsolutePath().normalize();
+        Path frontendRoot = frontend.toAbsolutePath().normalize();
+
+        for (String table : List.of("sys_user", "biz_order_item")) {
+            Map<String, String> saved = generator.saveToLocal(table, PKG, "jffast", null, true, true, "crud",
+                    null, null, null, null, null, null, backend.toFile(), frontend.toFile());
+            assertFalse(saved.isEmpty(), table + " 应通过校验并落盘");
+            assertTrue(relativePaths(saved.values(), root)
+                            .contains("app/jffast-biz/jffast-demo/src/main/resources/sql/" + table + "_menu.sql"),
+                    "菜单 SQL 文件名应含合法表名：" + table);
+            saved.values().forEach(path -> {
+                Path absolute = Path.of(path).toAbsolutePath().normalize();
+                assertTrue(absolute.startsWith(backendRoot) || absolute.startsWith(frontendRoot),
+                        "落点必须留在后端仓或前端仓内，不得越界：" + path);
+            });
+        }
+
+        Set<String> entries = zipEntryNames(generator.buildZip("sys_user", PKG, "jffast", null, true, "crud",
+                null, null, null, null, null, null, backend.toFile(), frontend.toFile()));
+        assertTrue(entries.contains("app/jffast-biz/jffast-demo/src/main/resources/sql/sys_user_menu.sql"),
+                "ZIP 应包含下划线表名的菜单 SQL");
+        assertTrue(entries.stream().noneMatch(name -> name.contains("..") || name.startsWith("/")),
+                "ZIP 条目不得出现路径穿越： " + entries);
+
+        for (String invalid : List.of("Sys_User", "1abc", "a/b", "a..b", "a b", "../evil", "a\\b", "..")) {
+            assertThrows(IllegalArgumentException.class, () -> generator.saveToLocal(invalid, PKG, "jffast",
+                    null, true, true, "crud", null, null, null, null, null, null,
+                    backend.toFile(), frontend.toFile()), "表名应被拒绝：" + invalid);
+        }
+    }
+
+
     /** 把本地落盘的绝对路径归一化成「相对后端仓与前端仓的同级父目录」的相对路径，与 zip 条目名同一坐标系 */
     private static Set<String> relativePaths(Iterable<String> absolutePaths, Path workspaceRoot) {
         Set<String> result = new TreeSet<>();

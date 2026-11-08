@@ -2613,6 +2613,14 @@ public class CodeGenerator {
      */
     private static final Pattern SAFE_SEGMENT = Pattern.compile("^[a-z][a-z0-9-]*$");
 
+    /**
+     * 表名白名单：在 {@link #SAFE_SEGMENT} 基础上**额外允许下划线**（真实表名如 {@code sys_user}）。
+     * <p>
+     * 只用于表名（会拼进 SQL 文件名与 ZIP 条目），仍拒绝大写、数字开头、点、斜杠、空格，
+     * 因此不构成路径穿越入口；包名 / 模块名 / 子表包名继续走严格规则。
+     */
+    private static final Pattern SAFE_TABLE_NAME = Pattern.compile("^[a-z][a-z0-9_-]*$");
+
     /** Java 字符串字面量转义：数据库注释含引号 / 反斜杠 / 换行会破坏产物源码 */
     private static String escapeJavaLiteral(String s) {
         if (s == null) {
@@ -2631,9 +2639,18 @@ public class CodeGenerator {
 
     /** 校验 segment 合法，并把它安全地解析到 baseDir 之下 */
     private static File resolveSafeSegment(File baseDir, String segment, String label) {
-        if (StrUtil.isBlank(segment) || !SAFE_SEGMENT.matcher(segment).matches()) {
+        return resolveSafeSegment(baseDir, segment, label, SAFE_SEGMENT, "小写字母、数字和连字符");
+    }
+
+    /** 表名走放宽的规则（允许下划线），其余校验与 {@link #resolveSafeSegment} 完全一致 */
+    private static File resolveSafeTableName(File baseDir, String tableName, String label) {
+        return resolveSafeSegment(baseDir, tableName, label, SAFE_TABLE_NAME, "小写字母、数字、下划线和连字符");
+    }
+
+    private static File resolveSafeSegment(File baseDir, String segment, String label, Pattern pattern, String allowed) {
+        if (StrUtil.isBlank(segment) || !pattern.matcher(segment).matches()) {
             throw new IllegalArgumentException(
-                    label + "非法：只允许小写字母开头，且仅包含小写字母、数字和连字符，实际值=[" + segment + "]");
+                    label + "非法：只允许小写字母开头，且仅包含" + allowed + "，实际值=[" + segment + "]");
         }
         try {
             File base = baseDir.getCanonicalFile();
@@ -2910,7 +2927,7 @@ public class CodeGenerator {
     private static void validateCodegenArgs(File projectRoot, String tableName, String packageName,
                                             String moduleName, String childTableName, String childPackageName) {
         File bizDir = new File(getBizDir(normalizePath(projectRoot.getAbsolutePath())));
-        resolveSafeSegment(bizDir, tableName, "表名");
+        resolveSafeTableName(bizDir, tableName, "表名");
         if (StrUtil.isNotBlank(packageName)) {
             resolveSafeSegment(bizDir, packageName, "包名");
         }
@@ -2918,7 +2935,7 @@ public class CodeGenerator {
             resolveSafeSegment(bizDir, moduleName, "模块名");
         }
         if (StrUtil.isNotBlank(childTableName)) {
-            resolveSafeSegment(bizDir, childTableName, "子表名");
+            resolveSafeTableName(bizDir, childTableName, "子表名");
         }
         if (StrUtil.isNotBlank(childPackageName)) {
             resolveSafeSegment(bizDir, childPackageName, "子表包名");
