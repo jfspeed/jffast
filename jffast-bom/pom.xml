@@ -267,7 +267,7 @@
             <dependency>
                 <groupId>org.dom4j</groupId>
                 <artifactId>dom4j</artifactId>
-                <version>2.1.4</version>
+                <version>2.2.0</version>
             </dependency>
             <!-- 安全：bcprov 是 commons-compress（经 POI）的传递依赖，本项目源码零引用，
                  但依赖扫描仍会按字面命中告警，故由 BOM 统一钉住版本。
