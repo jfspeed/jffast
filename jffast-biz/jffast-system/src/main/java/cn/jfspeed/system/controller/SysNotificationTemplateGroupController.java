@@ -16,6 +16,7 @@
 package cn.jfspeed.system.controller;
 
 import cn.dev33.satoken.annotation.SaCheckPermission;
+import cn.dev33.satoken.annotation.SaCheckRole;
 import cn.hutool.core.bean.BeanUtil;
 import jakarta.validation.Valid;
 import cn.jfspeed.system.domain.dto.SysNotificationTemplateGroupRequest;
@@ -64,6 +65,7 @@ public class SysNotificationTemplateGroupController {
     }
 
     @SaCheckPermission(orRole = BaseConstant.ROLE_SUPER_ADMIN, value = "system:notification:template:add")
+    @SaCheckRole(BaseConstant.ROLE_SUPER_ADMIN)
     @SLog(title = "新增通知模板分组")
     @Idempotent(expire = 5)
     @Operation(summary = "新增分组")
@@ -75,6 +77,7 @@ public class SysNotificationTemplateGroupController {
     }
 
     @SaCheckPermission(orRole = BaseConstant.ROLE_SUPER_ADMIN, value = "system:notification:template:edit")
+    @SaCheckRole(BaseConstant.ROLE_SUPER_ADMIN)
     @SLog(title = "修改通知模板分组")
     @Idempotent(expire = 5)
     @Operation(summary = "修改分组")
@@ -86,6 +89,7 @@ public class SysNotificationTemplateGroupController {
     }
 
     @SaCheckPermission(orRole = BaseConstant.ROLE_SUPER_ADMIN, value = "system:notification:template:delete")
+    @SaCheckRole(BaseConstant.ROLE_SUPER_ADMIN)
     @SLog(title = "删除通知模板分组")
     @Operation(summary = "删除分组")
     @DeleteMapping("/{id}")

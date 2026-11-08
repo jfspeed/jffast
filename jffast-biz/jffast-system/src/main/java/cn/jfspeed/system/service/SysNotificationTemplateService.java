@@ -16,6 +16,7 @@
 package cn.jfspeed.system.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import cn.hutool.core.util.StrUtil;
 import cn.jfspeed.common.data.base.BaseService;
 import cn.jfspeed.common.core.util.page.PageReq;
@@ -52,11 +53,16 @@ public class SysNotificationTemplateService extends BaseService<SysNotificationT
 
     /**
      * 根据编码获取模板并渲染
+     *
+     * <p>模板按租户隔离后，同一 code 在每个租户各有一行：有租户上下文时由拦截器过滤为一行；
+     * 平台级入口（无上下文）会命中多行，此时按 tenant_id 升序优先取平台默认模板（0），
+     * 且用 {@code throwEx=false} 避免多行直接抛 TooManyResultsException。
      */
     public Map<String, String> renderByCode(String code, Map<String, Object> params) {
-        SysNotificationTemplate template = getOne(new LambdaQueryWrapper<SysNotificationTemplate>()
-                .eq(SysNotificationTemplate::getCode, code)
-                .eq(SysNotificationTemplate::getStatus, 1));
+        SysNotificationTemplate template = getOne(new QueryWrapper<SysNotificationTemplate>()
+                .eq("code", code)
+                .eq("status", 1)
+                .orderByAsc("tenant_id"), false);
         if (template == null) {
             return null;
         }
