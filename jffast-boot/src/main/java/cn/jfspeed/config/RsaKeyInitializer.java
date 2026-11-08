@@ -16,6 +16,7 @@
 package cn.jfspeed.config;
 
 import java.util.List;
+import java.util.Set;
 
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
@@ -87,8 +88,23 @@ public class RsaKeyInitializer implements ApplicationRunner {
         log.warn("================================================================");
     }
 
-    /** 是否为生产环境（prod profile） */
+    /** 非生产 profile 白名单：只有显式 dev / test 才放宽，其余（prod / staging / 未指定…）一律按生产严格。 */
+    private static final Set<String> NON_PRODUCTION_PROFILES = Set.of("dev", "test");
+
+    /**
+     * 生产判定口径：除显式 dev / test 外一律按生产严格（空 profile 也算生产）。
+     */
+    static boolean isProductionProfile(String[] activeProfiles) {
+        for (String profile : activeProfiles) {
+            if (NON_PRODUCTION_PROFILES.contains(profile)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /** 是否为生产环境 */
     private boolean isProduction() {
-        return environment.matchesProfiles("prod");
+        return isProductionProfile(environment.getActiveProfiles());
     }
 }
