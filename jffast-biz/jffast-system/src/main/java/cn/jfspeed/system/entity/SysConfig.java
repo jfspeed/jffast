@@ -33,6 +33,16 @@ import lombok.EqualsAndHashCode;
 @Schema(description = "系统参数配置")
 public class SysConfig extends BaseEntity {
 
+    /**
+     * 租户 ID（{@code NULL} / {@code 0} = 平台配置）。
+     *
+     * <p>基座不注册租户拦截器，这一列必须显式映射，否则读写都碰不到它：
+     * 写入时无法落租户（新行全成平台行，对所有租户可见），读取时也无法按租户过滤。
+     * 过滤口径见 {@code SysConfigService#applyTenantScope}。
+     */
+    @TableField("tenant_id")
+    private Long tenantId;
+
     @TableField("config_name")
     @Schema(description = "参数名称")
     private String configName;

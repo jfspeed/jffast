@@ -62,10 +62,16 @@ public class SaTokenConfig implements WebMvcConfigurer {
     );
 
     // 仅保留本框架真实对外提供的基础设施路径；业务向匿名路径由应用按需声明（见类注释）。
-    // /upload/**：本地文件存储访问映射（jffast.file.storage.local.access-path）；
-    // /ws/**：WebSocket 握手路径（jffast.web.websocket.path）；/error：Spring 错误页分发。
+    // /ws/**：WebSocket 握手路径（jffast.web.websocket.path，握手自带 token 校验）；
+    // /error：Spring 错误页分发。
+    //
+    // ⚠️ /upload/** **不再**匿名：上传文件此前没有任何权限模型，拿到路径就能读（审计实测匿名 200）。
+    // 该路径由 WebMvcConfig 的静态映射直出磁盘/MinIO，拦截器是唯一的登录校验点，移出白名单后
+    // 未登录请求在进入静态处理器前就被 StpUtil.checkLogin() 拦成 401。
+    // 影响面：浏览器 <img>/直链依赖 Sa-Token 的 cookie 携带登录态（dev 代理与生产 nginx 均同源）；
+    // 跨域直链、邮件/第三方嵌入不再可读——这是预期行为，需要匿名分享的资源请走带签名的下载接口。
     private static final List<String> AUTH_WHITELIST = Arrays.asList(
-            "/upload/**", "/error", "/ws/**"
+            "/error", "/ws/**"
     );
 
     /**

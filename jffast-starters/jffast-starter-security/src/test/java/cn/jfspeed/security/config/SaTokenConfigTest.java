@@ -59,12 +59,23 @@ class SaTokenConfigTest {
     }
 
     @Test
-    @DisplayName("基础设施白名单（上传 / WebSocket / error）始终放行")
+    @DisplayName("基础设施白名单（WebSocket / error）始终放行")
     void shouldAlwaysExcludeInfrastructurePaths() throws Exception {
         List<String> excludes = excludesOf(new SecurityProperties(), false);
-        assertTrue(excludes.contains("/upload/**"));
         assertTrue(excludes.contains("/ws/**"));
         assertTrue(excludes.contains("/error"));
+    }
+
+    /**
+     * 回归：/upload/** 曾在内置白名单里，静态映射直出磁盘 → 匿名拿到路径即可读（审计实测 200）。
+     * 现在必须走登录校验，因此不得出现在任何免登录清单里（含业务追加项之外的默认项）。
+     */
+    @Test
+    @DisplayName("上传目录不在免登录白名单（匿名读取必须 401）")
+    void shouldNotExcludeUploadPath() throws Exception {
+        List<String> excludes = excludesOf(new SecurityProperties(), true);
+        assertFalse(excludes.contains("/upload/**"));
+        assertFalse(excludes.stream().anyMatch(path -> path.startsWith("/upload")));
     }
 
     @Test

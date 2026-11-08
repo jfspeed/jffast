@@ -73,8 +73,9 @@ public class WebMvcConfig implements WebMvcConfigurer {
 
     @Override
     public void addResourceHandlers(ResourceHandlerRegistry registry) {
-        // 本地文件存储访问映射：/upload/** 直接对外提供（与 jffast.file.storage.local.access-path=/upload 对应）
-        // 绝对路径避免相对路径解析不一致导致上传后 404
+        // 本地文件存储访问映射：/upload/** 由静态处理器直出磁盘（与 jffast.file.storage.local.access-path=/upload 对应）
+        // 绝对路径避免相对路径解析不一致导致上传后 404。
+        // 注意：本映射不提供鉴权，登录校验由 SaTokenConfig 的拦截器完成（/upload/** 不在免登录白名单里）。
         File baseDir = Paths.get(uploadBasePath).toAbsolutePath().normalize().toFile();
         registry.addResourceHandler("/upload/**").addResourceLocations(baseDir.toURI().toString());
         /** 历史 Knife4j 入口占位（当前无 knife4j 静态资源，404；官方适配 Boot 4 后回切时恢复） */
@@ -84,8 +85,8 @@ public class WebMvcConfig implements WebMvcConfigurer {
     }
 
     /**
-     * /upload/** 静态资源响应头加固：上传目录匿名可访问，若被同源内联打开，
-     * 恶意文件可能执行脚本（存储型 XSS）。此处兜底：
+     * /upload/** 静态资源响应头加固：文件可被浏览器直接打开，若被同源内联打开，
+     * 恶意文件可能执行脚本（存储型 XSS）。此处兜底（即使已要求登录，也不假定内容可信）：
      * <ul>
      *   <li>{@code X-Content-Type-Options: nosniff} —— 阻止浏览器把 text/plain 等嗅探成 HTML 执行</li>
      *   <li>{@code Content-Security-Policy: sandbox} —— 直接访问 SVG/HTML 等资源时禁用脚本</li>
