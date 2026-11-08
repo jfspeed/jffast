@@ -25,9 +25,14 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import cn.jfspeed.common.core.context.AuditContext;
+import cn.jfspeed.common.core.context.TenantScopeBridge;
 import cn.jfspeed.file.config.FileStorageProperties;
 import cn.jfspeed.mybatis.config.DataScopeContext;
 import jakarta.annotation.PreDestroy;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
@@ -38,12 +43,24 @@ import org.springframework.stereotype.Component;
  * 会在线程内恢复，执行完再还原调用线程原有上下文（{@link ThreadPoolExecutor.CallerRunsPolicy}
  * 会在调用线程直接执行任务，不还原会污染请求线程）。
  *
+ * <p>租户上下文同理：提交侧捕获、执行侧恢复（见 {@link TenantScopeBridge}）。否则线程池里的
+ * SQL 走的是「无租户上下文 = 全量视角」，A 租户的导出会把所有租户的数据都读到文件里。
+ *
  * @author jffast
  */
 @Component
 public class SysTaskRunner {
 
+    private static final Logger log = LoggerFactory.getLogger(SysTaskRunner.class);
+
     private final ThreadPoolExecutor executor;
+
+    /**
+     * 租户上下文桥：Base 单租户没有实现（{@code getIfAvailable()} 为 null，行为不变）。
+     * <p>用字段注入而非构造器注入，是为了不改变现有构造器签名（单测直接 new 本类）。
+     */
+    @Autowired
+    private ObjectProvider<TenantScopeBridge> tenantScopeBridgeProvider;
 
     /**
      * 任务产物落盘目录（构造期固化并校验，见 {@link #taskDir()}）。
@@ -79,15 +96,30 @@ public class SysTaskRunner {
      * 提交任务并在线程内恢复提交方捕获的操作者与数据权限快照
      */
     public void submit(SysTaskContext context, Runnable task) {
+        // 提交线程（请求线程）上的租户快照：必须在 execute 之前取，工作线程里拿不到登录态
+        Long submitTenantId = currentTenantId();
+        if (submitTenantId == null && bridge() != null) {
+            // 多租户环境下的显式声明：不是「忘了传」，而是提交方本身就没有租户（如平台超管）
+            log.info("【异步任务】提交线程无租户上下文，本次任务按平台级全量视角执行（显式声明）");
+        }
         executor.execute(() -> {
+            Long previousTenantId = currentTenantId();
             String previousDataScope = DataScopeContext.get();
+            boolean previousResolved = DataScopeContext.isResolved();
             Long previousOperator = AuditContext.getUserId();
+            attachTenant(submitTenantId);
             try {
                 if (context != null) {
                     if (context.dataScopeSql() != null) {
                         DataScopeContext.set(context.dataScopeSql());
                     } else {
                         DataScopeContext.clear();
+                    }
+                    // 提交线程已判定过数据权限：工作线程不再拿空用户重算，否则「不受限」会被误判成拒绝
+                    if (context.scopeResolved()) {
+                        DataScopeContext.markResolved();
+                    } else {
+                        DataScopeContext.clearResolved();
                     }
                     AuditContext.setUserId(context.operatorId());
                 }
@@ -98,9 +130,42 @@ public class SysTaskRunner {
                 } else {
                     DataScopeContext.clear();
                 }
+                if (previousResolved) {
+                    DataScopeContext.markResolved();
+                } else {
+                    DataScopeContext.clearResolved();
+                }
                 AuditContext.setUserId(previousOperator);
+                attachTenant(previousTenantId);
             }
         });
+    }
+
+    /** 租户上下文桥；Base 单租户没有实现，返回 null（所有租户相关动作退化为空操作） */
+    private TenantScopeBridge bridge() {
+        return tenantScopeBridgeProvider == null ? null : tenantScopeBridgeProvider.getIfAvailable();
+    }
+
+    /** 当前线程的租户；无桥实现时恒为 null（单租户语义） */
+    private Long currentTenantId() {
+        TenantScopeBridge bridge = bridge();
+        return bridge == null ? null : bridge.currentTenantId();
+    }
+
+    /**
+     * 切换当前线程租户；{@code null} = 显式平台级视角（清空残留，避免线程复用串租户）。
+     * <p>无桥实现（Base 单租户）时为空操作。
+     */
+    private void attachTenant(Long tenantId) {
+        TenantScopeBridge bridge = bridge();
+        if (bridge == null) {
+            return;
+        }
+        if (tenantId == null) {
+            bridge.detach();
+        } else {
+            bridge.attach(tenantId);
+        }
     }
 
     /**
