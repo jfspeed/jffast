@@ -33,6 +33,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import javax.sql.DataSource;
@@ -1999,19 +2000,34 @@ public class CodeGenerator {
     }
 
     public String saveRouterConfig(String tableName, String packageName, boolean overwrite) {
-        String frontendModule = getFrontendModule(packageName);
-        String className = toCamelCase(tableName, true);
-        String pageName = uncapitalize(className);
-        String tableComment = getTableComment(tableName);
         String frontendRoot = getFrontendProjectRoot();
-
         if (frontendRoot == null) {
             return null;
         }
+        String frontendModule = getFrontendModule(StrUtil.isNotBlank(packageName) ? packageName : "demo");
+        return saveRouterConfig(frontendRoot + "/src/router/modules/" + frontendModule + ".ts",
+                tableName, packageName, overwrite);
+    }
 
-        String routerFilePath = frontendRoot + "/src/router/modules/" + frontendModule + ".ts";
+    /** 路由文件路径由调用方给出（清单构建器的 absolutePath），避免两边各自拼路径 */
+    String saveRouterConfig(String routerFilePath, String tableName, String packageName, boolean overwrite) {
+        String frontendModule = getFrontendModule(StrUtil.isNotBlank(packageName) ? packageName : "demo");
+        String className = toCamelCase(tableName, true);
+        String pageName = uncapitalize(className);
+        String tableComment = getTableComment(tableName);
         File routerFile = new File(routerFilePath);
-        String newRoute = "    {\n" +
+        String newRoute = buildRouteBlock(className, pageName, frontendModule, tableComment);
+
+        if (routerFile.exists()) {
+            return appendToRouterFile(routerFile, newRoute, pageName, overwrite);
+        } else {
+            return createRouterFile(routerFile, frontendModule, tableComment, className, pageName);
+        }
+    }
+
+    /** 路由子项（4 空格缩进）：save-local 与 zip 共用同一份模板 */
+    static String buildRouteBlock(String className, String pageName, String frontendModule, String tableComment) {
+        return "    {\n" +
                 "      path: '" + pageName + "',\n" +
                 "      name: '" + className + "',\n" +
                 "      component: () => import('@/pages/" + frontendModule + "/" + pageName + "/index.vue'),\n" +
@@ -2022,23 +2038,18 @@ public class CodeGenerator {
                 "        },\n" +
                 "      },\n" +
                 "    },\n";
-
-        if (routerFile.exists()) {
-            return appendToRouterFile(routerFile, newRoute, pageName, overwrite);
-        } else {
-            return createRouterFile(routerFile, frontendModule, tableComment, newRoute);
-        }
     }
 
-    private String createRouterFile(File routerFile, String frontendModule, String tableComment, String newRoute) {
-        String content = "import { AppIcon } from 'tdesign-icons-vue-next';\n" +
+    /** 完整的路由模块文件内容：save-local 新建与 zip 条目共用 */
+    static String buildRouterFileContent(String frontendModule, String pageName, String tableComment, String routeBlock) {
+        return "import { AppIcon } from 'tdesign-icons-vue-next';\n" +
                 "import { shallowRef } from 'vue';\n\n" +
                 "import Layout from '@/layouts/index.vue';\n\n" +
                 "export default [\n" +
                 "  {\n" +
                 "    path: '/" + frontendModule + "',\n" +
                 "    component: Layout,\n" +
-                "    redirect: '/" + frontendModule + "/" + newRoute.split("'")[1] + "',\n" +
+                "    redirect: '/" + frontendModule + "/" + pageName + "',\n" +
                 "    name: '" + frontendModule + "',\n" +
                 "    meta: {\n" +
                 "      title: {\n" +
@@ -2049,11 +2060,16 @@ public class CodeGenerator {
                 "      orderNo: 99,\n" +
                 "    },\n" +
                 "    children: [\n" +
-                newRoute +
+                routeBlock +
                 "    ],\n" +
                 "  },\n" +
                 "] satisfies RouteRecordRaw[];\n";
+    }
 
+    private String createRouterFile(File routerFile, String frontendModule, String tableComment,
+                                    String className, String pageName) {
+        String content = buildRouterFileContent(frontendModule, pageName, tableComment,
+                buildRouteBlock(className, pageName, frontendModule, tableComment));
         writeFile(routerFile.getAbsolutePath(), content);
         return routerFile.getAbsolutePath();
     }
@@ -2434,6 +2450,14 @@ public class CodeGenerator {
         }
     }
 
+    /**
+     * 代码文件清单条目：{@code saveToLocal} 与 {@code buildZip} 的唯一路径来源。
+     * <p>
+     * {@code relativePath} 相对「后端仓与前端仓的同级父目录」，ZIP 条目名即它；
+     * {@code absolutePath} 是本地写盘用的绝对路径（前端仓未解析到时为 {@code null}）。
+     */
+    public record FileEntry(String type, String relativePath, String absolutePath, String content) {}
+
     public static boolean isRunningFromJar() {
         return !isLocalDevMode();
     }
@@ -2529,34 +2553,37 @@ public class CodeGenerator {
     }
 
     private static String getBizModuleDir(String projectRoot, String packageName, String moduleName) {
-        String bizDir = getBizDir(projectRoot);
-        if (moduleName != null && !moduleName.isEmpty()) {
-            File module = new File(bizDir, moduleName);
-            if (module.exists() && module.isDirectory()) {
-                return module.getAbsolutePath();
-            }
-        }
+        File bizDir = new File(getBizDir(projectRoot));
+        return new File(bizDir, resolveModuleDirName(bizDir, packageName, moduleName)).getAbsolutePath();
+    }
+
+    /**
+     * 解析业务模块目录名（不含父路径）。优先复用磁盘上的真实模块，找不到时回退到按命名约定推导的名字，
+     * 不再回退到 {@code projectRoot} 或任意第一个子目录——那会把生成代码写到仓根或别的模块里。
+     */
+    private static String resolveModuleDirName(File bizDir, String packageName, String moduleName) {
         String namingPrefix = getNamingPrefix();
         if (moduleName != null && !moduleName.isEmpty()) {
-            File module = new File(bizDir, namingPrefix + moduleName);
-            if (module.exists() && module.isDirectory()) {
-                return module.getAbsolutePath();
+            for (String candidate : new String[]{moduleName, namingPrefix + moduleName}) {
+                if (new File(bizDir, candidate).isDirectory()) {
+                    return candidate;
+                }
             }
         }
-        String guessedName = namingPrefix + packageName;
-        File guessedModule = new File(bizDir, guessedName);
-        if (guessedModule.exists() && guessedModule.isDirectory()) {
-            return guessedModule.getAbsolutePath();
+        String pkg = StrUtil.isNotBlank(packageName) ? packageName : "demo";
+        String guessedName = namingPrefix + pkg;
+        if (new File(bizDir, guessedName).isDirectory()) {
+            return guessedName;
         }
-        File systemModule = new File(bizDir, namingPrefix + "system");
-        if (systemModule.exists() && systemModule.isDirectory()) {
-            return systemModule.getAbsolutePath();
+        String systemName = namingPrefix + "system";
+        if (new File(bizDir, systemName).isDirectory()) {
+            return systemName;
         }
-        File[] subDirs = new File(bizDir).listFiles(File::isDirectory);
+        File[] subDirs = bizDir.listFiles(File::isDirectory);
         if (subDirs != null && subDirs.length > 0) {
-            return subDirs[0].getAbsolutePath();
+            return subDirs[0].getName();
         }
-        return projectRoot;
+        return guessedName;
     }
 
     public List<String> listModules() {
@@ -2833,176 +2860,69 @@ public class CodeGenerator {
         if (isRunningFromJar()) {
             return null;
         }
-        // 阻断路径穿越：tableName / packageName / moduleName / 子表字段都会拼进输出文件路径，
-        // 入口统一过一次字符白名单（子表字段允许为空，为空则不校验）
-        resolveSafeSegment(new File(getBizDir(getProjectRoot())), tableName, "表名");
-        if (StrUtil.isNotBlank(packageName)) {
-            resolveSafeSegment(new File(getBizDir(getProjectRoot())), packageName, "包名");
-        }
-        if (StrUtil.isNotBlank(moduleName)) {
-            resolveSafeSegment(new File(getBizDir(getProjectRoot())), moduleName, "模块名");
-        }
-        if (StrUtil.isNotBlank(childTableName)) {
-            resolveSafeSegment(new File(getBizDir(getProjectRoot())), childTableName, "子表名");
-        }
-        if (StrUtil.isNotBlank(childPackageName)) {
-            resolveSafeSegment(new File(getBizDir(getProjectRoot())), childPackageName, "子表包名");
-        }
+        String frontendRoot = getFrontendProjectRoot();
+        return saveToLocal(tableName, packageName, author, types, overwrite, includeDto, genType,
+                parentField, nameField, childTableName, childForeignKey, childPackageName, moduleName,
+                new File(getProjectRoot()), frontendRoot == null ? null : new File(frontendRoot));
+    }
+
+    /**
+     * 保存到本地（可指定根目录，供测试注入临时工程）：与 {@link #buildManifest} 同源，按清单逐条落盘。
+     * <p>
+     * API / 路由仍走增量合并（saveApiToFile / saveRouterConfig），其余文件直接写清单内容；
+     * 落盘路径全部来自清单的 {@code absolutePath}，不再单独拼路径。
+     */
+    Map<String, String> saveToLocal(String tableName, String packageName, String author,
+                             List<String> types, boolean overwrite, boolean includeDto,
+                             String genType, String parentField, String nameField,
+                             String childTableName, String childForeignKey, String childPackageName,
+                             String moduleName, File projectRoot, File frontendRoot) {
+        validateCodegenArgs(projectRoot, tableName, packageName, moduleName, childTableName, childPackageName);
         GeneratedCode code = generate(tableName, packageName, author, includeDto, genType,
                 parentField, nameField, childTableName, childForeignKey, childPackageName);
-        String className = toCamelCase(tableName, true);
-        String basePkg = "cn.jfspeed";
-        String frontendModule = getFrontendModule(packageName);
-        String pageName = uncapitalize(className);
-
-        String projectRoot = getProjectRoot();
-        String bizModuleDir = getBizModuleDir(projectRoot, packageName, moduleName);
-        String frontendRoot = getFrontendProjectRoot();
+        List<FileEntry> manifest = buildManifest(code, tableName, packageName, author, types, includeDto,
+                genType, childTableName, childPackageName, moduleName, projectRoot, frontendRoot);
         Map<String, String> savedPaths = new HashMap<>();
-
-        String entityPath = bizModuleDir + "/src/main/java/"
-                + basePkg.replace('.', '/') + "/" + packageName + "/entity/" + className + ".java";
-        if (types == null || types.contains("entity")) {
-            saveFile(entityPath, code.entity(), overwrite);
-            savedPaths.put("entity", entityPath);
-        }
-        String mapperPath = bizModuleDir + "/src/main/java/"
-                + basePkg.replace('.', '/') + "/" + packageName + "/mapper/"
-                + className + "Mapper.java";
-        if (types == null || types.contains("mapper")) {
-            saveFile(mapperPath, code.mapper(), overwrite);
-            savedPaths.put("mapper", mapperPath);
-        }
-        String servicePath = bizModuleDir + "/src/main/java/"
-                + basePkg.replace('.', '/') + "/" + packageName + "/service/"
-                + className + "Service.java";
-        if (types == null || types.contains("service")) {
-            saveFile(servicePath, code.service(), overwrite);
-            savedPaths.put("service", servicePath);
-        }
-        String controllerPath = bizModuleDir + "/src/main/java/"
-                + basePkg.replace('.', '/') + "/" + packageName + "/controller/"
-                + className + "Controller.java";
-        if (types == null || types.contains("controller")) {
-            saveFile(controllerPath, code.controller(), overwrite);
-            savedPaths.put("controller", controllerPath);
-        }
-
-        if (frontendRoot != null) {
-            if (types == null || types.contains("frontendApi")) {
-                String apiPath = frontendRoot + "/src/api/" + frontendModule + ".js";
-                String apiResult = saveApiToFile(apiPath, tableName, packageName, author, overwrite);
-                if (apiResult != null) {
-                    savedPaths.put("frontendApi", apiResult);
-                }
+        for (FileEntry entry : manifest) {
+            if (entry.absolutePath() == null) {
+                continue;
             }
-            if (types == null || types.contains("frontendIndexPage")) {
-                String indexPath = frontendRoot + "/src/pages/" + frontendModule + "/" + pageName + "/index.vue";
-                saveFile(indexPath, code.frontendIndexPage(), overwrite);
-                savedPaths.put("frontendIndexPage", indexPath);
+            String type = entry.type();
+            String result;
+            if ("frontendApi".equals(type) || "childFrontendApi".equals(type)) {
+                String apiTable = "childFrontendApi".equals(type) ? childTableName : tableName;
+                String apiPackage = "childFrontendApi".equals(type) && StrUtil.isNotBlank(childPackageName)
+                        ? childPackageName : packageName;
+                result = saveApiToFile(entry.absolutePath(), apiTable, apiPackage, author, overwrite);
+            } else if ("frontendRouter".equals(type)) {
+                result = saveRouterConfig(entry.absolutePath(), tableName, packageName, overwrite);
+            } else {
+                saveFile(entry.absolutePath(), entry.content(), overwrite);
+                result = entry.absolutePath();
             }
-            if (types == null || types.contains("frontendSavePage")) {
-                String savePath = frontendRoot + "/src/pages/" + frontendModule + "/" + pageName + "/save.vue";
-                saveFile(savePath, code.frontendSavePage(), overwrite);
-                savedPaths.put("frontendSavePage", savePath);
-            }
-            if (types != null && types.contains("frontendRouter")) {
-                String routerPath = saveRouterConfig(tableName, packageName, overwrite);
-                if (routerPath != null) {
-                    savedPaths.put("frontendRouter", routerPath);
-                }
+            if (result != null) {
+                savedPaths.put(type, result);
             }
         }
-
-        if (types == null || types.contains("menuSql")) {
-            String sqlDir = bizModuleDir + "/src/main/resources/sql";
-            new File(sqlDir).mkdirs();
-            String sqlPath = sqlDir + "/" + tableName + "_menu.sql";
-            saveFile(sqlPath, code.menuSql(), overwrite);
-            savedPaths.put("menuSql", sqlPath);
-        }
-
-        // dtoRequest 无条件落盘：生成的 Controller 的 create/update 已依赖它
-        // （includeDto 参数现在仅控制是否额外生成 QueryRequest）
-        if (code.dtoRequest() != null) {
-            String dtoPath = bizModuleDir + "/src/main/java/"
-                    + basePkg.replace('.', '/') + "/" + packageName + "/domain/dto/"
-                    + className + "Request.java";
-            saveFile(dtoPath, code.dtoRequest(), overwrite);
-            savedPaths.put("dtoRequest", dtoPath);
-        }
-        if (includeDto && code.dtoQueryRequest() != null) {
-            String dtoQueryPath = bizModuleDir + "/src/main/java/"
-                    + basePkg.replace('.', '/') + "/" + packageName + "/domain/dto/"
-                    + className + "QueryRequest.java";
-            saveFile(dtoQueryPath, code.dtoQueryRequest(), overwrite);
-            savedPaths.put("dtoQueryRequest", dtoQueryPath);
-        }
-
-        if ("masterDetail".equals(genType) && childTableName != null && !childTableName.isEmpty()) {
-            String childPkg = (childPackageName != null && !childPackageName.isEmpty()) ? childPackageName : packageName;
-            String childClassName = toCamelCase(childTableName, true);
-            String childBizModuleDir = getBizModuleDir(projectRoot, childPkg, moduleName);
-            String childFrontendModule = getFrontendModule(childPkg);
-            String childPageName = uncapitalize(childClassName);
-            String childUrl = "/" + childFrontendModule + "/" + childPageName;
-
-            if (code.childEntity() != null) {
-                String childEntityPath = childBizModuleDir + "/src/main/java/"
-                        + basePkg.replace('.', '/') + "/" + childPkg + "/entity/" + childClassName + ".java";
-                saveFile(childEntityPath, code.childEntity(), overwrite);
-                savedPaths.put("childEntity", childEntityPath);
-            }
-            if (code.childMapper() != null) {
-                String childMapperPath = childBizModuleDir + "/src/main/java/"
-                        + basePkg.replace('.', '/') + "/" + childPkg + "/mapper/"
-                        + childClassName + "Mapper.java";
-                saveFile(childMapperPath, code.childMapper(), overwrite);
-                savedPaths.put("childMapper", childMapperPath);
-            }
-            if (code.childService() != null) {
-                String childServicePath = childBizModuleDir + "/src/main/java/"
-                        + basePkg.replace('.', '/') + "/" + childPkg + "/service/"
-                        + childClassName + "Service.java";
-                saveFile(childServicePath, code.childService(), overwrite);
-                savedPaths.put("childService", childServicePath);
-            }
-            if (code.childController() != null) {
-                String childControllerPath = childBizModuleDir + "/src/main/java/"
-                        + basePkg.replace('.', '/') + "/" + childPkg + "/controller/"
-                        + childClassName + "Controller.java";
-                saveFile(childControllerPath, code.childController(), overwrite);
-                savedPaths.put("childController", childControllerPath);
-            }
-
-            if (frontendRoot != null) {
-                if (code.childFrontendApi() != null) {
-                    String childApiPath = frontendRoot + "/src/api/" + childFrontendModule + ".js";
-                    File childApiFile = new File(childApiPath);
-                    if (!childApiFile.exists()) {
-                        String childApiContent = "import { createCrud, http } from '@/api/core/crud';\n\n" +
-                                code.childFrontendApi() + "\n" +
-                                "export default { " + childPageName + " };\n";
-                        saveFile(childApiPath, childApiContent, overwrite);
-                    } else {
-                        saveApiToFile(childApiPath, childTableName, childPkg, author, overwrite);
-                    }
-                    savedPaths.put("childFrontendApi", frontendRoot + "/src/api/" + childFrontendModule + ".js");
-                }
-                if (code.childFrontendIndexPage() != null) {
-                    String childIndexPath = frontendRoot + "/src/pages/" + childFrontendModule + "/" + childPageName + "/index.vue";
-                    saveFile(childIndexPath, code.childFrontendIndexPage(), overwrite);
-                    savedPaths.put("childFrontendIndexPage", childIndexPath);
-                }
-                if (code.childFrontendSavePage() != null) {
-                    String childSavePath = frontendRoot + "/src/pages/" + childFrontendModule + "/" + childPageName + "/save.vue";
-                    saveFile(childSavePath, code.childFrontendSavePage(), overwrite);
-                    savedPaths.put("childFrontendSavePage", childSavePath);
-                }
-            }
-        }
-
         return savedPaths;
+    }
+
+    private static void validateCodegenArgs(File projectRoot, String tableName, String packageName,
+                                            String moduleName, String childTableName, String childPackageName) {
+        File bizDir = new File(getBizDir(normalizePath(projectRoot.getAbsolutePath())));
+        resolveSafeSegment(bizDir, tableName, "表名");
+        if (StrUtil.isNotBlank(packageName)) {
+            resolveSafeSegment(bizDir, packageName, "包名");
+        }
+        if (StrUtil.isNotBlank(moduleName)) {
+            resolveSafeSegment(bizDir, moduleName, "模块名");
+        }
+        if (StrUtil.isNotBlank(childTableName)) {
+            resolveSafeSegment(bizDir, childTableName, "子表名");
+        }
+        if (StrUtil.isNotBlank(childPackageName)) {
+            resolveSafeSegment(bizDir, childPackageName, "子表包名");
+        }
     }
 
     private void saveFile(String path, String content, boolean overwrite) {
@@ -3027,19 +2947,17 @@ public class CodeGenerator {
 
     // ==================== zip 打包（JAR / 容器部署下的「保存到本地」替代方案） ====================
 
-    /** 后端代码在 zip 内的目录前缀 */
-    private static final String ZIP_BACKEND_SRC = "src/main/java/cn/jfspeed/";
-    /** 前端代码在 zip 内的目录前缀 */
-    private static final String ZIP_FRONTEND_SRC = "frontend/src/";
-
     /**
      * 把生成的代码打包为 zip 字节流。
      * <p>
      * JAR / Docker / K8s 部署下没有可写的本地工程目录，`save-local` 会被拒绝；
      * 此时前端改用本接口一次性下载整个模块（entity / mapper / service / controller /
-     * 前端 api / 页面 / 路由 / 菜单 SQL），避免逐个文件点击下载。
+     * 前端 api / 页面 / 路由 / 菜单 SQL）。
      * <p>
-     * 包内目录结构镜像真实工程布局，解压后可直接对照放入。
+     * 条目名与 {@link #saveToLocal} 的落盘路径同源（都来自 {@link #buildManifest}）：
+     * 解压到「后端仓与前端仓的同级父目录」即为覆盖式回灌。
+     * <p>
+     * 请求结构、Content-Type 与下载文件名语义均未改变，只是 zip 内部布局对齐了本地落点。
      *
      * @return zip 文件内容；条目名与 {@link #getSavePaths} 的相对部分一致
      */
@@ -3048,25 +2966,39 @@ public class CodeGenerator {
                            String parentField, String nameField,
                            String childTableName, String childForeignKey, String childPackageName,
                            String moduleName) {
-        // 与 createModule / saveToLocal 一致：拼路径前先过字符白名单
-        resolveSafeSegment(new File(getBizDir(getProjectRoot())), tableName, "表名");
-        if (StrUtil.isNotBlank(packageName)) {
-            resolveSafeSegment(new File(getBizDir(getProjectRoot())), packageName, "包名");
-        }
-        if (StrUtil.isNotBlank(moduleName)) {
-            resolveSafeSegment(new File(getBizDir(getProjectRoot())), moduleName, "模块名");
-        }
+        String frontendRoot = getFrontendProjectRoot();
+        return buildZip(tableName, packageName, author, types, includeDto, genType,
+                parentField, nameField, childTableName, childForeignKey, childPackageName, moduleName,
+                new File(getProjectRoot()), frontendRoot == null ? null : new File(frontendRoot));
+    }
 
+    /** 可指定根目录的打包入口（供测试注入临时工程），与 {@link #buildManifest} 同源 */
+    byte[] buildZip(String tableName, String packageName, String author,
+                    List<String> types, boolean includeDto, String genType,
+                    String parentField, String nameField,
+                    String childTableName, String childForeignKey, String childPackageName,
+                    String moduleName, File projectRoot, File frontendRoot) {
+        validateCodegenArgs(projectRoot, tableName, packageName, moduleName, childTableName, childPackageName);
         GeneratedCode code = generate(tableName, packageName, author, includeDto, genType,
                 parentField, nameField, childTableName, childForeignKey, childPackageName);
-        Map<String, String> entries = buildFileEntries(tableName, packageName, code, types, includeDto);
+        List<FileEntry> manifest = buildManifest(code, tableName, packageName, author, types, includeDto,
+                genType, childTableName, childPackageName, moduleName, projectRoot, frontendRoot);
+
+        // 主子表同模块时父子 API 落在同一个 *.js：save-local 由 saveApiToFile 增量合并，
+        // zip 没有增量过程，必须在这里合成一份，否则 ZipOutputStream 会因重复条目直接失败
+        Map<String, String> entries = new LinkedHashMap<>();
+        for (FileEntry entry : manifest) {
+            String content = entry.content() == null ? "" : entry.content();
+            String previous = entries.get(entry.relativePath());
+            entries.put(entry.relativePath(),
+                    previous == null ? content : mergeApiContents(previous, content));
+        }
 
         ByteArrayOutputStream bos = new ByteArrayOutputStream();
         try (ZipOutputStream zos = new ZipOutputStream(bos, StandardCharsets.UTF_8)) {
             for (Map.Entry<String, String> entry : entries.entrySet()) {
                 zos.putNextEntry(new ZipEntry(entry.getKey()));
-                String content = entry.getValue();
-                zos.write(content == null ? new byte[0] : content.getBytes(StandardCharsets.UTF_8));
+                zos.write(entry.getValue().getBytes(StandardCharsets.UTF_8));
                 zos.closeEntry();
             }
         } catch (IOException e) {
@@ -3075,51 +3007,176 @@ public class CodeGenerator {
         return bos.toByteArray();
     }
 
-    /**
-     * 组装「zip 内相对路径 → 文件内容」。
-     * <p>
-     * 路径规则与 {@code saveToLocal} 保持一致，便于用户按同样结构落盘；
-     * 与落盘不同的是这里不读取已有文件做增量合并——下载的 zip 本就是完整的新文件。
-     */
-    private Map<String, String> buildFileEntries(String tableName, String packageName,
-                                                 GeneratedCode code, List<String> types, boolean includeDto) {
-        String className = toCamelCase(tableName, true);
-        String frontendModule = getFrontendModule(packageName);
-        String pageName = uncapitalize(className);
-        boolean all = types == null || types.isEmpty();
+    /** 合并两个「独立可用」的 API 文件内容：去掉重复 import / export，只留一个 export default */
+    static String mergeApiContents(String first, String second) {
+        Pattern exportBlock = Pattern.compile("export default\\s*\\{([^}]*)\\};\\s*$");
+        Matcher firstExport = exportBlock.matcher(first);
+        Matcher secondExport = exportBlock.matcher(second);
+        if (!firstExport.find() || !secondExport.find()) {
+            return first + "\n" + second;
+        }
+        String head = first.substring(0, firstExport.start()).stripTrailing();
+        String body = second.substring(0, secondExport.start())
+                .replaceFirst("^import [^\\n]*;\\n\\s*", "")
+                .strip();
+        String exports = (firstExport.group(1).trim() + ", " + secondExport.group(1).trim())
+                .replaceAll("\\s+", " ");
+        return head + "\n\n" + body + "\n\nexport default { " + exports + " };\n";
+    }
 
-        Map<String, String> entries = new LinkedHashMap<>();
-        if (all || types.contains("entity")) {
-            entries.put(ZIP_BACKEND_SRC + packageName + "/entity/" + className + ".java", code.entity());
-        }
-        if (all || types.contains("mapper")) {
-            entries.put(ZIP_BACKEND_SRC + packageName + "/mapper/" + className + "Mapper.java", code.mapper());
-        }
-        if (all || types.contains("service")) {
-            entries.put(ZIP_BACKEND_SRC + packageName + "/service/" + className + "Service.java", code.service());
-        }
-        if (all || types.contains("controller")) {
-            entries.put(ZIP_BACKEND_SRC + packageName + "/controller/" + className + "Controller.java", code.controller());
-        }
-        if (all || types.contains("frontendApi")) {
-            entries.put(ZIP_FRONTEND_SRC + "api/" + frontendModule + ".js", code.frontendApi());
-        }
-        if (all || types.contains("frontendIndexPage")) {
-            entries.put(ZIP_FRONTEND_SRC + "pages/" + frontendModule + "/" + pageName + "/index.vue", code.frontendIndexPage());
-        }
-        if (all || types.contains("frontendSavePage")) {
-            entries.put(ZIP_FRONTEND_SRC + "pages/" + frontendModule + "/" + pageName + "/save.vue", code.frontendSavePage());
-        }
-        if (all || types.contains("menuSql")) {
-            entries.put("sql/" + tableName + "_menu.sql", code.menuSql());
-        }
-        // 与 saveToLocal 同口径：dtoRequest 无条件打包（Controller 模板依赖它）
+    /**
+     * 统一的「生成哪些文件、每个文件放到哪个相对路径」清单构建器。
+     * <p>
+     * {@code saveToLocal} 与 {@code buildZip} 都只消费本方法的结果，不允许再各自拼路径；
+     * 以后新增文件类型只改这里，两边不可能再漂。{@code relativePath} 相对后端仓与前端仓的同级父目录
+     * （含后端仓名 / 实际解析出的前端仓名），ZIP 条目名即它。
+     */
+    List<FileEntry> buildManifest(GeneratedCode code, String tableName, String packageName, String author,
+                                  List<String> types, boolean includeDto, String genType,
+                                  String childTableName, String childPackageName, String moduleName,
+                                  File projectRoot, File frontendRoot) {
+        String pkg = normalizePackageName(packageName);
+        String className = toCamelCase(tableName, true);
+        String pageName = uncapitalize(className);
+        String frontendModule = getFrontendModule(pkg);
+        String tableComment = getTableComment(tableName);
+
+        File bizDir = new File(getBizDir(normalizePath(projectRoot.getAbsolutePath())));
+        String moduleDirName = resolveModuleDirName(bizDir, pkg, moduleName);
+        String backendRepoName = projectRoot.getName();
+        String frontendRepoName = frontendRoot != null ? frontendRoot.getName() : frontendDirName(backendRepoName);
+
+        String backendAbsRoot = normalizePath(projectRoot.getAbsolutePath())
+                + "/" + getBizDirName() + "/" + moduleDirName;
+        String backendRelRoot = backendRepoName + "/" + getBizDirName() + "/" + moduleDirName;
+        String javaAbsRoot = backendAbsRoot + "/src/main/java/cn/jfspeed/" + pkg;
+        String javaRelRoot = backendRelRoot + "/src/main/java/cn/jfspeed/" + pkg;
+        String webAbsRoot = frontendRoot == null ? null : normalizePath(frontendRoot.getAbsolutePath()) + "/src";
+        String webRelRoot = frontendRepoName + "/src";
+
+        boolean all = types == null || types.isEmpty();
+        List<FileEntry> entries = new ArrayList<>();
+
+        addFile(entries, all || types.contains("entity"), "entity",
+                javaRelRoot + "/entity/" + className + ".java",
+                javaAbsRoot + "/entity/" + className + ".java", code.entity());
+        addFile(entries, all || types.contains("mapper"), "mapper",
+                javaRelRoot + "/mapper/" + className + "Mapper.java",
+                javaAbsRoot + "/mapper/" + className + "Mapper.java", code.mapper());
+        addFile(entries, all || types.contains("service"), "service",
+                javaRelRoot + "/service/" + className + "Service.java",
+                javaAbsRoot + "/service/" + className + "Service.java", code.service());
+        addFile(entries, all || types.contains("controller"), "controller",
+                javaRelRoot + "/controller/" + className + "Controller.java",
+                javaAbsRoot + "/controller/" + className + "Controller.java", code.controller());
+
+        addFile(entries, all || types.contains("frontendApi"), "frontendApi",
+                webRelRoot + "/api/" + frontendModule + ".js",
+                webAbsRoot + "/api/" + frontendModule + ".js", standaloneApiContent(code.frontendApi()));
+        addFile(entries, all || types.contains("frontendIndexPage"), "frontendIndexPage",
+                webRelRoot + "/pages/" + frontendModule + "/" + pageName + "/index.vue",
+                webAbsRoot + "/pages/" + frontendModule + "/" + pageName + "/index.vue", code.frontendIndexPage());
+        addFile(entries, all || types.contains("frontendSavePage"), "frontendSavePage",
+                webRelRoot + "/pages/" + frontendModule + "/" + pageName + "/save.vue",
+                webAbsRoot + "/pages/" + frontendModule + "/" + pageName + "/save.vue", code.frontendSavePage());
+        addFile(entries, all || types.contains("frontendRouter"), "frontendRouter",
+                webRelRoot + "/router/modules/" + frontendModule + ".ts",
+                webAbsRoot + "/router/modules/" + frontendModule + ".ts",
+                buildRouterFileContent(frontendModule, pageName, tableComment,
+                        buildRouteBlock(className, pageName, frontendModule, tableComment)));
+
+        addFile(entries, all || types.contains("menuSql"), "menuSql",
+                backendRelRoot + "/src/main/resources/sql/" + tableName + "_menu.sql",
+                backendAbsRoot + "/src/main/resources/sql/" + tableName + "_menu.sql", code.menuSql());
+
+        // dtoRequest 无条件产出：Controller 模板依赖它；includeDto 仅控制 QueryRequest
         if (code.dtoRequest() != null) {
-            entries.put(ZIP_BACKEND_SRC + packageName + "/domain/dto/" + className + "Request.java", code.dtoRequest());
+            entries.add(new FileEntry("dtoRequest",
+                    javaRelRoot + "/domain/dto/" + className + "Request.java",
+                    javaAbsRoot + "/domain/dto/" + className + "Request.java", code.dtoRequest()));
         }
         if (includeDto && code.dtoQueryRequest() != null) {
-            entries.put(ZIP_BACKEND_SRC + packageName + "/domain/dto/" + className + "QueryRequest.java", code.dtoQueryRequest());
+            entries.add(new FileEntry("dtoQueryRequest",
+                    javaRelRoot + "/domain/dto/" + className + "QueryRequest.java",
+                    javaAbsRoot + "/domain/dto/" + className + "QueryRequest.java", code.dtoQueryRequest()));
+        }
+
+        if ("masterDetail".equals(genType) && StrUtil.isNotBlank(childTableName)) {
+            String childPkg = StrUtil.isNotBlank(childPackageName) ? childPackageName : pkg;
+            String childClassName = toCamelCase(childTableName, true);
+            String childPageName = uncapitalize(childClassName);
+            String childFrontendModule = getFrontendModule(childPkg);
+            String childModuleDirName = resolveModuleDirName(bizDir, childPkg, moduleName);
+            String childJavaAbsRoot = normalizePath(projectRoot.getAbsolutePath())
+                    + "/" + getBizDirName() + "/" + childModuleDirName + "/src/main/java/cn/jfspeed/" + childPkg;
+            String childJavaRelRoot = backendRepoName + "/" + getBizDirName() + "/" + childModuleDirName
+                    + "/src/main/java/cn/jfspeed/" + childPkg;
+
+            if (code.childEntity() != null) {
+                entries.add(new FileEntry("childEntity",
+                        childJavaRelRoot + "/entity/" + childClassName + ".java",
+                        childJavaAbsRoot + "/entity/" + childClassName + ".java", code.childEntity()));
+            }
+            if (code.childMapper() != null) {
+                entries.add(new FileEntry("childMapper",
+                        childJavaRelRoot + "/mapper/" + childClassName + "Mapper.java",
+                        childJavaAbsRoot + "/mapper/" + childClassName + "Mapper.java", code.childMapper()));
+            }
+            if (code.childService() != null) {
+                entries.add(new FileEntry("childService",
+                        childJavaRelRoot + "/service/" + childClassName + "Service.java",
+                        childJavaAbsRoot + "/service/" + childClassName + "Service.java", code.childService()));
+            }
+            if (code.childController() != null) {
+                entries.add(new FileEntry("childController",
+                        childJavaRelRoot + "/controller/" + childClassName + "Controller.java",
+                        childJavaAbsRoot + "/controller/" + childClassName + "Controller.java", code.childController()));
+            }
+            if (code.childFrontendApi() != null) {
+                entries.add(new FileEntry("childFrontendApi",
+                        webRelRoot + "/api/" + childFrontendModule + ".js",
+                        webAbsRoot + "/api/" + childFrontendModule + ".js",
+                        standaloneApiContent(code.childFrontendApi())));
+            }
+            if (code.childFrontendIndexPage() != null) {
+                entries.add(new FileEntry("childFrontendIndexPage",
+                        webRelRoot + "/pages/" + childFrontendModule + "/" + childPageName + "/index.vue",
+                        webAbsRoot + "/pages/" + childFrontendModule + "/" + childPageName + "/index.vue",
+                        code.childFrontendIndexPage()));
+            }
+            if (code.childFrontendSavePage() != null) {
+                entries.add(new FileEntry("childFrontendSavePage",
+                        webRelRoot + "/pages/" + childFrontendModule + "/" + childPageName + "/save.vue",
+                        webAbsRoot + "/pages/" + childFrontendModule + "/" + childPageName + "/save.vue",
+                        code.childFrontendSavePage()));
+            }
         }
         return entries;
+    }
+
+    private static void addFile(List<FileEntry> entries, boolean include, String type,
+                                String relativePath, String absolutePath, String content) {
+        if (include) {
+            entries.add(new FileEntry(type, relativePath, absolutePath, content));
+        }
+    }
+
+    /** 完整可用的 API 文件内容：补上 `createCrud` 的 import（旧 zip 直接塞片段，缺 import） */
+    static String standaloneApiContent(String apiContent) {
+        if (apiContent == null) {
+            return null;
+        }
+        if (apiContent.contains("from '@/api/core/crud'")) {
+            return apiContent;
+        }
+        return "import { createCrud, http } from '@/api/core/crud';\n\n" + apiContent;
+    }
+
+    private static String normalizePackageName(String packageName) {
+        return StrUtil.isNotBlank(packageName) ? packageName : "demo";
+    }
+
+    private static String normalizePath(String path) {
+        return path == null ? null : path.replace('\\', '/');
     }
 }

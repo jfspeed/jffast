@@ -21,7 +21,9 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import javax.sql.DataSource;
+import java.io.ByteArrayInputStream;
 import java.io.File;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.sql.Connection;
@@ -29,7 +31,11 @@ import java.sql.DatabaseMetaData;
 import java.sql.ResultSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.TreeSet;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipInputStream;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
@@ -240,6 +246,152 @@ class CodeGeneratorTest {
         Assumptions.assumeTrue(expectedDir.isDirectory(),
                 "当前布局没有同级前端仓 " + expectedDir + "，跳过运行期断言");
         assertEquals(expectedDir.getAbsolutePath(), CodeGenerator.getFrontendProjectRoot());
+    }
+
+    @Test
+    @DisplayName("同源守门人：manifest / save-local 真实落盘 / zip 条目的相对路径集合必须完全相同")
+    void manifestLocalAndZipShareSamePaths(@TempDir Path tempDir) throws Exception {
+        Path root = tempDir.resolve("ws");
+        Path backend = root.resolve("app");
+        Path frontend = root.resolve("app-ui");
+        Files.createDirectories(backend.resolve("jffast-biz/jffast-demo"));
+        Files.createDirectories(frontend.resolve("src"));
+        Files.writeString(backend.resolve("pom.xml"), "<project/>");
+
+        CodeGenerator generator = newGenerator();
+        String table = "example"; // 表名会过 SAFE_SEGMENT 白名单（下划线会被拒，见报告）
+        String genType = "crud";
+        List<String> types = null; // null = 全部文件
+
+        CodeGenerator.GeneratedCode code = generator.generate(table, PKG, "jffast", true,
+                genType, null, null, null, null, null);
+        List<CodeGenerator.FileEntry> manifest = generator.buildManifest(code, table, PKG, "jffast",
+                types, true, genType, null, null, null, backend.toFile(), frontend.toFile());
+        Map<String, String> saved = generator.saveToLocal(table, PKG, "jffast", types, true, true, genType,
+                null, null, null, null, null, null, backend.toFile(), frontend.toFile());
+        byte[] zip = generator.buildZip(table, PKG, "jffast", types, true, genType,
+                null, null, null, null, null, null, backend.toFile(), frontend.toFile());
+
+        Set<String> manifestPaths = new TreeSet<>();
+        manifest.forEach(entry -> manifestPaths.add(entry.relativePath()));
+        Set<String> savedPaths = relativePaths(saved.values(), root);
+        Set<String> zipPaths = zipEntryNames(zip);
+
+        System.out.println("ZIP 条目清单：" + zipPaths);
+        System.out.println("save-local 落盘：" + savedPaths);
+
+        assertEquals(manifestPaths, zipPaths, "zip 条目必须与清单构建器同源");
+        assertEquals(manifestPaths, savedPaths, "save-local 落盘必须与清单构建器同源");
+        assertEquals(zipPaths, savedPaths, "zip 条目与 save-local 真实落盘必须逐条一致");
+
+        String backendBase = "app/jffast-biz/jffast-demo";
+        String frontendBase = "app-ui/src";
+        assertTrue(zipPaths.contains(backendBase + "/src/main/java/cn/jfspeed/demo/entity/Example.java"));
+        assertTrue(zipPaths.contains(backendBase + "/src/main/resources/sql/example_menu.sql"),
+                "菜单 SQL 应落在模块的 src/main/resources/sql/ 下");
+        assertTrue(zipPaths.contains(frontendBase + "/api/demo.js"));
+        assertTrue(zipPaths.contains(frontendBase + "/router/modules/demo.ts"), "zip 必须包含 frontendRouter");
+        assertTrue(zipPaths.contains(frontendBase + "/pages/demo/example/index.vue"));
+        assertTrue(zipPaths.contains(frontendBase + "/pages/demo/example/save.vue"));
+        assertFalse(zipPaths.stream().anyMatch(p -> p.startsWith("src/main/java")),
+                "不得再出现无后端仓名前缀的旧布局");
+    }
+
+    @Test
+    @DisplayName("masterDetail：child* 全部文件进入清单与 zip，并与本地落盘路径一致")
+    void masterDetailIncludesAllChildFiles(@TempDir Path tempDir) throws Exception {
+        Path root = tempDir.resolve("ws");
+        Path backend = root.resolve("app");
+        Path frontend = root.resolve("app-ui");
+        Files.createDirectories(backend.resolve("jffast-biz/jffast-demo"));
+        Files.createDirectories(backend.resolve("jffast-biz/jffast-detail"));
+        Files.createDirectories(frontend.resolve("src"));
+        Files.writeString(backend.resolve("pom.xml"), "<project/>");
+
+        CodeGenerator generator = newGenerator();
+        String table = "example";
+        String childTable = "subitem";
+        String genType = "masterDetail";
+
+        CodeGenerator.GeneratedCode code = generator.generate(table, PKG, "jffast", false, genType,
+                null, null, childTable, "example_id", "detail");
+        List<CodeGenerator.FileEntry> manifest = generator.buildManifest(code, table, PKG, "jffast",
+                null, false, genType, childTable, "detail", null, backend.toFile(), frontend.toFile());
+        Map<String, String> saved = generator.saveToLocal(table, PKG, "jffast", null, true, false, genType,
+                null, null, childTable, "example_id", "detail", null, backend.toFile(), frontend.toFile());
+        byte[] zip = generator.buildZip(table, PKG, "jffast", null, false, genType,
+                null, null, childTable, "example_id", "detail", null, backend.toFile(), frontend.toFile());
+
+        Set<String> manifestPaths = new TreeSet<>();
+        manifest.forEach(entry -> manifestPaths.add(entry.relativePath()));
+        Set<String> savedPaths = relativePaths(saved.values(), root);
+        Set<String> zipPaths = zipEntryNames(zip);
+
+        assertEquals(manifestPaths, zipPaths, "主子表 zip 条目必须与清单同源");
+        assertEquals(zipPaths, savedPaths, "主子表 zip 条目与 save-local 落盘必须逐条一致");
+
+        String childBackend = "app/jffast-biz/jffast-detail/src/main/java/cn/jfspeed/detail";
+        assertTrue(zipPaths.contains(childBackend + "/entity/Subitem.java"));
+        assertTrue(zipPaths.contains(childBackend + "/mapper/SubitemMapper.java"));
+        assertTrue(zipPaths.contains(childBackend + "/service/SubitemService.java"));
+        assertTrue(zipPaths.contains(childBackend + "/controller/SubitemController.java"));
+        assertTrue(zipPaths.contains("app-ui/src/api/detail.js"));
+        assertTrue(zipPaths.contains("app-ui/src/pages/detail/subitem/index.vue"));
+        assertTrue(zipPaths.contains("app-ui/src/pages/detail/subitem/save.vue"));
+    }
+
+    @Test
+    @DisplayName("主子表同模块：父子 API 合并为单个 zip 条目，不得因重复条目打包失败")
+    void masterDetailSamePackageMergesApiEntry(@TempDir Path tempDir) throws Exception {
+        Path root = tempDir.resolve("ws");
+        Path backend = root.resolve("app");
+        Path frontend = root.resolve("app-ui");
+        Files.createDirectories(backend.resolve("jffast-biz/jffast-demo"));
+        Files.createDirectories(frontend.resolve("src"));
+        Files.writeString(backend.resolve("pom.xml"), "<project/>");
+
+        CodeGenerator generator = newGenerator();
+        String table = "example";
+        String childTable = "subitem";
+        String genType = "masterDetail";
+
+        // childPackageName 留空 → 子表与主表同包，父子 API 落在同一个 demo.js
+        byte[] zip = generator.buildZip(table, PKG, "jffast", null, false, genType,
+                null, null, childTable, "example_id", null, null, backend.toFile(), frontend.toFile());
+
+        Map<String, String> entries = zipContents(zip);
+        String api = entries.get("app-ui/src/api/demo.js");
+        assertNotNull(api, "父子同模块时必须只有一个 demo.js 条目");
+        assertTrue(api.contains("const example = createCrud('/demo/example')"), "主表 API 不得丢");
+        assertTrue(api.contains("const subitem = createCrud('/demo/subitem')"), "子表 API 不得丢");
+        assertTrue(api.contains("export default { example, subitem };"), "导出对象必须合并");
+        assertFalse(api.contains("export default { example };\nexport default"), "不得残留两个 export default");
+    }
+
+
+    /** 把本地落盘的绝对路径归一化成「相对后端仓与前端仓的同级父目录」的相对路径，与 zip 条目名同一坐标系 */
+    private static Set<String> relativePaths(Iterable<String> absolutePaths, Path workspaceRoot) {
+        Set<String> result = new TreeSet<>();
+        Path root = workspaceRoot.toAbsolutePath().normalize();
+        for (String path : absolutePaths) {
+            result.add(root.relativize(Path.of(path).toAbsolutePath().normalize()).toString().replace('\\', '/'));
+        }
+        return result;
+    }
+
+    private static Set<String> zipEntryNames(byte[] zip) throws Exception {
+        return new TreeSet<>(zipContents(zip).keySet());
+    }
+
+    private static Map<String, String> zipContents(byte[] zip) throws Exception {
+        Map<String, String> contents = new java.util.LinkedHashMap<>();
+        try (ZipInputStream zis = new ZipInputStream(new ByteArrayInputStream(zip), StandardCharsets.UTF_8)) {
+            ZipEntry entry;
+            while ((entry = zis.getNextEntry()) != null) {
+                contents.put(entry.getName().replace('\\', '/'), new String(zis.readAllBytes(), StandardCharsets.UTF_8));
+            }
+        }
+        return contents;
     }
 
     private static void createDirs(Path base, String... names) throws Exception {
