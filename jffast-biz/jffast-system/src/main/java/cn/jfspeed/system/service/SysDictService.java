@@ -333,8 +333,33 @@ public class SysDictService extends BaseService<SysDictMapper, SysDict>{
         }
     }
 
+    /**
+     * 新建字典行时落当前会话租户。
+     *
+     * <p>{@code sys_dict.tenant_id} 由本服务写入，而不是交给 MyBatis-Plus 自动填充：
+     * 基座没有租户上下文/租户拦截器，自动填充只管审计字段（见 {@code AutoFillHandler}），
+     * 结果新建字典一律落成 {@code tenant_id = NULL} 的平台行，在云版里对所有租户可见。</p>
+     *
+     * <p>租户取值与会话维度的字典缓存键（{@link #cacheKeyOf}）使用同一来源
+     * {@link LoginUser#getTenantId()}：有会话租户就落会话租户（含平台占位 {@code 0}），
+     * 无登录态（启动期初始化、匿名基础数据）保持 {@code NULL}，不把无主数据强行挂到某个租户。
+     * 只填 {@code null} 值，不覆盖显式指定——运维按租户建字典的脚本仍可显式传值。
+     * 多租户形态（Pro）的 {@code TenantAutoFillHandler} 会在插入时按租户上下文强制覆盖，
+     * 本方法不与其冲突。</p>
+     */
+    private static void fillTenantOnCreate(SysDict entity) {
+        if (entity == null || entity.getTenantId() != null) {
+            return;
+        }
+        LoginUser loginUser = LoginUtil.getLoginUser();
+        if (loginUser != null && loginUser.getTenantId() != null) {
+            entity.setTenantId(loginUser.getTenantId());
+        }
+    }
+
     @Override
     public boolean save(SysDict entity) {
+        fillTenantOnCreate(entity);
         boolean result = super.save(entity);
         if (result) {
             clearCacheOf(entity);
