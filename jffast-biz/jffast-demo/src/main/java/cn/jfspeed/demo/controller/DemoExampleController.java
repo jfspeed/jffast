@@ -64,7 +64,7 @@ public class DemoExampleController extends BaseController<DemoExampleService, De
     @SaCheckPermission(orRole = BaseConstant.ROLE_SUPER_ADMIN, value = "demo:example:view")
     @Operation(summary = "详情")
     public R detail(@PathVariable("id") Long id) {
-        return R.success(service.getById(id));
+        return R.success(service.detail(id));
     }
 
     @SLog(title = "新增示例")
@@ -73,7 +73,7 @@ public class DemoExampleController extends BaseController<DemoExampleService, De
     @SaCheckPermission(orRole = BaseConstant.ROLE_SUPER_ADMIN, value = "demo:example:add")
     @Operation(summary = "新增")
     public R create(@RequestBody @Valid DemoExampleRequest req) {
-        service.save(BeanUtil.copyProperties(req, DemoExample.class));
+        service.saveWithItems(BeanUtil.copyProperties(req, DemoExample.class), req.getItems());
         return R.success();
     }
 
@@ -83,7 +83,7 @@ public class DemoExampleController extends BaseController<DemoExampleService, De
     @SaCheckPermission(orRole = BaseConstant.ROLE_SUPER_ADMIN, value = "demo:example:update")
     @Operation(summary = "修改")
     public R update(@RequestBody @Valid DemoExampleRequest req) {
-        service.updateById(BeanUtil.copyProperties(req, DemoExample.class));
+        service.updateWithItems(BeanUtil.copyProperties(req, DemoExample.class), req.getItems());
         return R.success();
     }
 
@@ -92,7 +92,7 @@ public class DemoExampleController extends BaseController<DemoExampleService, De
     @SaCheckPermission(orRole = BaseConstant.ROLE_SUPER_ADMIN, value = "demo:example:delete")
     @Operation(summary = "删除")
     public R delete(@PathVariable("id") Long id) {
-        service.removeById(id);
+        service.removeWithItems(id);
         return R.success();
     }
 

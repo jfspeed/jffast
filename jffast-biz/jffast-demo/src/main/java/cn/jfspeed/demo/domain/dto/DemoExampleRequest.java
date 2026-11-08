@@ -16,12 +16,14 @@
 package cn.jfspeed.demo.domain.dto;
 
 import io.swagger.v3.oas.annotations.media.Schema;
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import lombok.Data;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.List;
 
 /**
  * 示例新增/修改请求体。
@@ -99,4 +101,14 @@ public class DemoExampleRequest {
 
     @Schema(description = "备注")
     private String remark;
+
+    @Schema(description = "乐观锁版本号：修改时由详情/列表带回，不传则不校验版本")
+    private Integer version;
+
+    /**
+     * 明细子行：非 null 时按「全量替换」处理（空数组=清空）；不传（null）表示本次不动明细。
+     */
+    @Valid
+    @Schema(description = "明细行")
+    private List<DemoExampleItemRequest> items;
 }

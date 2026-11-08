@@ -20,6 +20,7 @@ import java.util.List;
 import org.apache.ibatis.builder.MapperBuilderAssistant;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
@@ -35,6 +36,7 @@ import org.mockito.Mock;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -46,10 +48,14 @@ import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 
+import cn.jfspeed.common.core.exception.BusinessException;
 import cn.jfspeed.common.core.util.page.PageRes;
 import cn.jfspeed.demo.domain.dto.DemoExampleExcel;
+import cn.jfspeed.demo.domain.dto.DemoExampleItemRequest;
 import cn.jfspeed.demo.domain.dto.DemoExampleQueryRequest;
 import cn.jfspeed.demo.entity.DemoExample;
+import cn.jfspeed.demo.entity.DemoExampleItem;
+import cn.jfspeed.demo.mapper.DemoExampleItemMapper;
 import cn.jfspeed.demo.mapper.DemoExampleMapper;
 
 /**
@@ -79,6 +85,9 @@ class DemoExampleServiceTest {
     @Mock
     private DemoExampleMapper demoExampleMapper;
 
+    @Mock
+    private DemoExampleItemMapper demoExampleItemMapper;
+
     private DemoExampleService service;
 
     @BeforeEach
@@ -87,12 +96,15 @@ class DemoExampleServiceTest {
         // 正确姿势：手动 new + spy，再用 ReflectionTestUtils 注入 protected 字段。
         service = spy(new DemoExampleService());
         ReflectionTestUtils.setField(service, "baseMapper", demoExampleMapper);
+        ReflectionTestUtils.setField(service, "demoExampleItemMapper", demoExampleItemMapper);
     }
 
     @BeforeAll
     static void initTableInfo() {
         // 让 LambdaQueryWrapper 能把 DemoExample::getTitle 解析成列名；每个被测实体都要注册一次
-        TableInfoHelper.initTableInfo(new MapperBuilderAssistant(new MybatisConfiguration(), ""), DemoExample.class);
+        MapperBuilderAssistant assistant = new MapperBuilderAssistant(new MybatisConfiguration(), "");
+        TableInfoHelper.initTableInfo(assistant, DemoExample.class);
+        TableInfoHelper.initTableInfo(assistant, DemoExampleItem.class);
     }
 
     @Nested
@@ -167,6 +179,91 @@ class DemoExampleServiceTest {
 
             when(demoExampleMapper.update(any(), any())).thenReturn(0);
             assertFalse(service.updateStatus(1L, 0));
+        }
+    }
+
+    @Nested
+    @DisplayName("主子表：detail / saveWithItems / updateWithItems")
+    class MasterDetail {
+
+        @Test
+        @DisplayName("detail 返回主表并回填按 sort 排序的明细")
+        void detailLoadsItems() {
+            DemoExample entity = new DemoExample();
+            entity.setId(1L);
+            when(demoExampleMapper.selectById(1L)).thenReturn(entity);
+            DemoExampleItem item = new DemoExampleItem();
+            item.setId(1L);
+            item.setExampleId(1L);
+            when(demoExampleItemMapper.selectList(any())).thenReturn(List.of(item));
+
+            DemoExample detail = service.detail(1L);
+
+            assertEquals(1L, detail.getId());
+            assertEquals(1, detail.getItems().size());
+            assertEquals(1L, detail.getItems().get(0).getExampleId());
+        }
+
+        @Test
+        @DisplayName("detail 主表不存在时不查明细")
+        void detailMissingReturnsNull() {
+            when(demoExampleMapper.selectById(2L)).thenReturn(null);
+
+            assertEquals(null, service.detail(2L));
+            verify(demoExampleItemMapper, never()).selectList(any());
+        }
+
+        @Test
+        @DisplayName("新增：先落主表，再按数组下标全量插入明细")
+        void saveWithItemsInsertsRows() {
+            DemoExample entity = new DemoExample();
+            entity.setId(10L);
+            entity.setTitle("主表");
+            when(demoExampleMapper.insert(any(DemoExample.class))).thenReturn(1);
+            when(demoExampleItemMapper.insert(any(DemoExampleItem.class))).thenReturn(1);
+
+            DemoExampleItemRequest first = new DemoExampleItemRequest();
+            first.setProductName("物料A");
+            DemoExampleItemRequest second = new DemoExampleItemRequest();
+            second.setProductName("物料B");
+
+            assertTrue(service.saveWithItems(entity, List.of(first, second)));
+
+            verify(demoExampleItemMapper).delete(any());
+            ArgumentCaptor<DemoExampleItem> captor = ArgumentCaptor.forClass(DemoExampleItem.class);
+            verify(demoExampleItemMapper, times(2)).insert(captor.capture());
+            assertEquals(10L, captor.getAllValues().get(0).getExampleId());
+            assertEquals("物料A", captor.getAllValues().get(0).getProductName());
+            assertEquals(0, captor.getAllValues().get(0).getSort());
+            assertEquals(1, captor.getAllValues().get(1).getSort());
+        }
+
+        @Test
+        @DisplayName("修改：版本冲突（影响行数 0）抛业务异常，且不碰明细")
+        void updateWithItemsRejectsStaleVersion() {
+            when(demoExampleMapper.updateById(any(DemoExample.class))).thenReturn(0);
+
+            DemoExample entity = new DemoExample();
+            entity.setId(1L);
+            entity.setVersion(3);
+
+            assertThrows(BusinessException.class, () -> service.updateWithItems(entity, List.of()));
+            verify(demoExampleItemMapper, never()).delete(any());
+            verify(demoExampleItemMapper, never()).insert(any(DemoExampleItem.class));
+        }
+
+        @Test
+        @DisplayName("修改：items 为 null 表示不动明细，只有显式空数组才清空")
+        void updateWithItemsNullKeepsExisting() {
+            when(demoExampleMapper.updateById(any(DemoExample.class))).thenReturn(1);
+            DemoExample entity = new DemoExample();
+            entity.setId(1L);
+
+            assertTrue(service.updateWithItems(entity, null));
+            verify(demoExampleItemMapper, never()).delete(any());
+
+            assertTrue(service.updateWithItems(entity, List.of()));
+            verify(demoExampleItemMapper).delete(any());
         }
     }
 }

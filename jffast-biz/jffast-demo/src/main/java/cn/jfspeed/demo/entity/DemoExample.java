@@ -17,6 +17,7 @@ package cn.jfspeed.demo.entity;
 
 import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableName;
+import com.baomidou.mybatisplus.annotation.Version;
 import cn.jfspeed.common.data.base.BaseEntity;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
@@ -25,6 +26,7 @@ import lombok.EqualsAndHashCode;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.List;
 
 /**
  * @author jffast
@@ -122,4 +124,14 @@ public class DemoExample extends BaseEntity {
     @TableField("remark")
     @Schema(description = "备注")
     private String remark;
+
+    @Version
+    @TableField("version")
+    @Schema(description = "乐观锁版本号")
+    private Integer version;
+
+    /** 明细子行：详情接口回填；保存时随主表一起提交，不落 demo_example 表 */
+    @TableField(exist = false)
+    @Schema(description = "明细行")
+    private List<DemoExampleItem> items;
 }
