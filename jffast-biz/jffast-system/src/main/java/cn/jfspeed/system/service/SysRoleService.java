@@ -70,6 +70,20 @@ public class SysRoleService extends BaseService<SysRoleMapper, SysRole>{
     /** 与 {@code sql/system_sql.sql} 的 `uk_sys_role_tenant_role_key` 同名，仅用于内部区分撞的是哪个唯一约束。 */
     private static final String ROLE_KEY_UNIQUE_INDEX = "uk_sys_role_tenant_role_key";
 
+    /**
+     * 平台级菜单（租户管理）的菜单 ID：仅超级管理员角色可被授权，非超管角色保存授权时直接拒绝。
+     * <p>
+     * 5014 是「租户管理」页面菜单，5174~5181 是它下面的按钮位（租户查询/新增/修改/删除、
+     * 社交配置查询/新增/修改/删除）。显式列表是刻意选择：`sys_menu` 现有字段（visible / state / perms）
+     * 都没有「仅超管可授」的语义，复用会污染语义且依赖命名约定，改表结构代价更大。
+     * <p>
+     * 维护方式：**新增租户管理相关菜单时，必须同步补进本清单**（与菜单种子脚本保持一致）。
+     * 清单由 {@code SysRoleMenuGrantGuardTest} 钉住，漏改会在评审与测试里暴露。
+     */
+    private static final Set<Long> SUPER_ADMIN_ONLY_MENU_IDS = Set.of(
+            5014L,
+            5174L, 5175L, 5176L, 5177L, 5178L, 5179L, 5180L, 5181L);
+
     @Resource
     private SysMenuService sysMenuService;
     @Resource
@@ -188,13 +202,17 @@ public class SysRoleService extends BaseService<SysRoleMapper, SysRole>{
 
     /**
      * 新增角色菜单信息
+     * <p>
+     * 先补祖先并校验平台级菜单，再执行「先删后建」——校验放在删除之前，
+     * 保证被拒绝时不会先把既有绑定删掉（即便调用方不在事务里也不丢数据）。
      */
     public void insertRoleMenu(Long id, Long[] menuIds) {
+        Long[] fullMenuIds = expandMenuAncestors(menuIds);
+        assertSuperAdminOnlyMenuNotGranted(id, fullMenuIds);
         QueryWrapper<SysRoleMenu> queryWrapper = new QueryWrapper<>();
         queryWrapper.lambda().eq(SysRoleMenu::getRoleId,id);
         sysRoleMenuService.remove(queryWrapper);
-        if (ArrayUtil.isNotEmpty(menuIds)) {
-            Long[] fullMenuIds = expandMenuAncestors(menuIds);
+        if (ArrayUtil.isNotEmpty(fullMenuIds)) {
             List<SysRoleMenu> list = new ArrayList<>();
             for (Long menuId : fullMenuIds) {
                 list.add(new SysRoleMenu(id,menuId));
@@ -205,6 +223,40 @@ public class SysRoleService extends BaseService<SysRoleMapper, SysRole>{
         }
         // 绑定已变更：立即失效该角色权限缓存（含历史无 TTL 哈希字段）
         sysRoleMenuService.clearRoleCache(id);
+    }
+
+    /**
+     * 拒绝把平台级菜单授予非超管角色。
+     * <p>
+     * 明确报错而不是静默过滤：静默丢弃会让管理员以为保存成功，下次打开又「消失」，无从排查。
+     * 入参是 {@link #expandMenuAncestors} 补全祖先后的集合，因此「只勾了某个按钮」同样会命中。
+     * 超管口径与系统一致：{@code role_id = 1} 或 {@code role_key = super_admin} 任一成立即可；
+     * 角色查不到时按非超管处理（fail-closed）。
+     */
+    private void assertSuperAdminOnlyMenuNotGranted(Long roleId, Long[] menuIds) {
+        if (menuIds == null || menuIds.length == 0) {
+            return;
+        }
+        Set<Long> hits = Arrays.stream(menuIds)
+                .filter(SUPER_ADMIN_ONLY_MENU_IDS::contains)
+                .collect(Collectors.toCollection(LinkedHashSet::new));
+        if (hits.isEmpty()) {
+            return;
+        }
+        SysRole role = this.getById(roleId);
+        if (role != null && (Objects.equals(BaseConstant.ROLE_ID_SUPER_ADMIN_LONG, role.getId())
+                || BaseConstant.ROLE_SUPER_ADMIN.equals(role.getRoleKey()))) {
+            return;
+        }
+        String names = hits.stream()
+                .map(menuId -> {
+                    SysMenu menu = sysMenuService.getById(menuId);
+                    return menu != null && StrUtil.isNotBlank(menu.getName())
+                            ? menu.getName() : String.valueOf(menuId);
+                })
+                .collect(Collectors.joining("、"));
+        throw new BusinessException(403,
+                "「租户管理」是平台级菜单，仅超级管理员角色可授权；请从该角色的菜单中移除：" + names);
     }
 
     /**
