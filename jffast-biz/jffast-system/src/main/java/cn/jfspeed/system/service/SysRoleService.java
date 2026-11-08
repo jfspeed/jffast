@@ -78,9 +78,12 @@ public class SysRoleService extends BaseService<SysRoleMapper, SysRole>{
      * 都没有「仅超管可授」的语义，复用会污染语义且依赖命名约定，改表结构代价更大。
      * <p>
      * 维护方式：**新增租户管理相关菜单时，必须同步补进本清单**（与菜单种子脚本保持一致）。
-     * 清单由 {@code SysRoleMenuGrantGuardTest} 钉住，漏改会在评审与测试里暴露。
+     * 清单由 {@code SysRoleMenuGrantGuardTest} 钉住行为、{@code SysRoleMenuGrantGuardCoverageTest}
+     * 按 {@code parent_id} 遍历种子里的真实子树做覆盖式比对，漏登记会直接报出菜单 id。
+     * <p>
+     * 包可见（非 private）是为了让同包测试直接读取，避免测试里再抄一份 id 列表。
      */
-    private static final Set<Long> SUPER_ADMIN_ONLY_MENU_IDS = Set.of(
+    static final Set<Long> SUPER_ADMIN_ONLY_MENU_IDS = Set.of(
             5014L,
             5174L, 5175L, 5176L, 5177L, 5178L, 5179L, 5180L, 5181L);
 
