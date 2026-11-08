@@ -489,11 +489,9 @@ public class SysUserController extends BaseController<SysUserService,SysUser> {
         if (!validatePasswordStrength(newPassword)) {
             return R.error("密码强度不足：需8-20位，包含大小写字母、数字和特殊字符");
         }
-        // 密码策略扩展点（可插拔 Starter 提供实现后生效）：可配置复杂度、历史密码不可复用、弱口令拦截
-        LoginPolicyProvider loginPolicyProvider = this.loginPolicyProvider.getIfAvailable();
-        if (loginPolicyProvider != null) {
-            loginPolicyProvider.validateNewPassword(currentId, newPassword);
-        }
+        // 旧密码必须先校验：LoginPolicyProvider.validateNewPassword 会写"历史密码"，
+        // 放在旧密码校验之前的话，用户旧密码输错一次就会把这次想用的新密码记进历史，
+        // 之后再用同一个新密码会被"不可复用历史密码"直接拒绝，而它其实从未生效过。
         SysUser user = service.getById(currentId);
         if (user == null) {
             return R.error(SystemErrorCode.USER_NOT_FOUND.getCode(), SystemErrorCode.USER_NOT_FOUND.getMsg());
@@ -501,6 +499,11 @@ public class SysUserController extends BaseController<SysUserService,SysUser> {
         boolean authenticate = EncryptionUtil.verifyPassword(oldPassword, user.getPassword());
         if (!authenticate){
             return R.error(SystemErrorCode.PASSWORD_ERROR.getCode(), "旧密码错误");
+        }
+        // 密码策略扩展点（可插拔 Starter 提供实现后生效）：可配置复杂度、历史密码不可复用、弱口令拦截
+        LoginPolicyProvider loginPolicyProvider = this.loginPolicyProvider.getIfAvailable();
+        if (loginPolicyProvider != null) {
+            loginPolicyProvider.validateNewPassword(currentId, newPassword);
         }
         String password = EncryptionUtil.getEncryptPassword(newPassword);
         UpdateWrapper<SysUser> updateWrapper = new UpdateWrapper<>();
