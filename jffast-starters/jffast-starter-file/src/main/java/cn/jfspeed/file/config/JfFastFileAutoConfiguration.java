@@ -39,6 +39,7 @@ import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.boot.context.properties.bind.Bindable;
 import org.springframework.boot.context.properties.bind.Binder;
 import org.springframework.context.annotation.Bean;
@@ -70,6 +71,7 @@ import java.util.Set;
 @Slf4j
 @AutoConfiguration
 @ConditionalOnClass(FileStorageService.class)
+@EnableConfigurationProperties(FileStorageProperties.class)
 public class JfFastFileAutoConfiguration {
 
     /** 非生产 profile 白名单：只有显式 dev / test 才放宽，其余（prod / staging / 未指定…）一律按生产严格 */
