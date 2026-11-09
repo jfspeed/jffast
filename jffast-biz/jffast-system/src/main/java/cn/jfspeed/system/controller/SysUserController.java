@@ -35,6 +35,10 @@ import cn.jfspeed.system.domain.dto.SysUserImportResult;
 import cn.jfspeed.system.domain.dto.SysUserProfileRequest;
 import cn.jfspeed.system.domain.dto.SysUserSaveRequest;
 import cn.jfspeed.system.domain.vo.SysUserVO;
+import cn.jfspeed.common.file.FileUploadVO;
+import cn.jfspeed.system.entity.SysFile;
+import cn.jfspeed.system.service.FileUrlSignService;
+import cn.jfspeed.system.service.SysFileService;
 import cn.jfspeed.system.entity.SysDept;
 import cn.jfspeed.system.entity.SysPost;
 import cn.jfspeed.system.entity.SysRole;
@@ -49,6 +53,8 @@ import cn.jfspeed.common.core.enums.FrameworkErrorCode;
 import cn.jfspeed.redis.util.RedisUtil;
 import cn.jfspeed.common.data.base.BaseController;
 import cn.jfspeed.common.security.util.LoginUtil;
+import cn.jfspeed.common.file.FileRefs;
+import cn.jfspeed.common.file.FileUploadResult;
 import cn.jfspeed.common.core.util.page.PageReq;
 import cn.jfspeed.system.entity.SysUser;
 import cn.jfspeed.file.service.FileStorageService;
@@ -125,6 +131,10 @@ public class SysUserController extends BaseController<SysUserService,SysUser> {
     @Resource
     private FileStorageService fileStorageService;
     @Resource
+    private FileUrlSignService fileUrlSignService;
+    @Resource
+    private SysFileService sysFileService;
+    @Resource
     private SysLogService sysLogService;
     @Resource
     private SysTaskService sysTaskService;
@@ -159,7 +169,7 @@ public class SysUserController extends BaseController<SysUserService,SysUser> {
         Map<String,Object> map = new HashMap<>();
         SysUser user = (SysUser) LoginUtil.getLoginSysUser();
         if ("1".equals(user.getIsBusinessUser())) {
-            map.put("user", SysUserVO.from(user));
+            map.put("user", signedUserVO(user));
             map.put("permissions", LoginUtil.getPermList(Convert.toList(Long.class,user.getRoleId())));
         } else {
             if (user.getUpdatePwdTime() == null){
@@ -170,7 +180,7 @@ public class SysUserController extends BaseController<SysUserService,SysUser> {
                 user.setUpdatePwdTime(byId.getUpdatePwdTime());
             }
             sysSafeService.getPwdCycle(map,user.getUpdatePwdTime());
-            map.put("user", SysUserVO.from(user));
+            map.put("user", signedUserVO(user));
             List<Long> roleIdList = user.getRoleList() == null ? new ArrayList<>() : user.getRoleList().stream().map(t->t.getId()).collect(Collectors.toList());
             map.put("permissions", LoginUtil.getPermList(roleIdList));
         }
@@ -191,7 +201,9 @@ public class SysUserController extends BaseController<SysUserService,SysUser> {
     public R<List<SysUserVO>> all() {
         List<SysUser> users = service.listAll();
         // 出参走 VO 白名单：password / salt / dataScope 等内部字段不再随响应外泄
-        return R.success(SysUserVO.fromList(users));
+        List<SysUserVO> voList = SysUserVO.fromList(users);
+        fileUrlSignService.fillAvatarUrls(voList);
+        return R.success(voList);
     }
 
     @GetMapping("/export")
@@ -347,7 +359,7 @@ public class SysUserController extends BaseController<SysUserService,SysUser> {
             return R.error(e.getCode(), e.getMessage());
         }
         // 出参走 VO 白名单：password / salt / dataScope / role_id 等内部字段不再随响应外泄
-        return R.success(SysUserVO.from(user));
+        return R.success(signedUserVO(user));
     }
 
     @SLog(title = "新增用户")
@@ -776,10 +788,10 @@ public class SysUserController extends BaseController<SysUserService,SysUser> {
     @PostMapping("/upload")
     @RateLimit(value = "default")
     @Operation(summary = "上传文件")
-    public R upload(@RequestParam MultipartFile file) throws IOException {
+    public R<FileUploadVO> upload(@RequestParam MultipartFile file) throws IOException {
         String fileName = file.getOriginalFilename();
-        String imgUrl = fileStorageService.uploadFile("user-file", fileName, file);
-        return R.success(imgUrl);
+        FileUploadResult result = fileStorageService.uploadFileWithRecord("user-file", fileName, file, false);
+        return R.success(buildUploadVO(result, fileName, file.getSize(), file.getContentType()));
     }
 
     // 登录态即可：本人头像上传，登录态 + @RateLimit 兜底，故不设权限码
@@ -787,14 +799,73 @@ public class SysUserController extends BaseController<SysUserService,SysUser> {
     @PostMapping("/uploadHead")
     @RateLimit(value = "default")
     @Operation(summary = "上传头像")
-    public R uploadHead(@RequestParam MultipartFile file) throws IOException {
+    public R<FileUploadVO> uploadHead(@RequestParam MultipartFile file) throws IOException {
         String fileName = file.getOriginalFilename();
-        String imgUrl = fileStorageService.uploadImgFile("user-avatar", fileName, file);
+        FileUploadResult result = fileStorageService.uploadFileWithRecord("user-avatar", fileName, file, true);
+        // ⚠️ 库里存的是**稳定引用** file:{id}，不是签名 URL（签名有 TTL，落库即过期），
+        // 也不是裸存储路径（路径会随 access-path 变化而失效，且一旦外泄等于永久可读）。
         UpdateWrapper<SysUser> updateWrapper = new UpdateWrapper<>();
-        updateWrapper.set("avatar",imgUrl);
+        updateWrapper.set("avatar", FileRefs.of(result.getFileId()));
         updateWrapper.eq("id", loginId());
         service.update(updateWrapper);
-        return R.success(imgUrl);
+        return R.success(buildUploadVO(result, fileName, file.getSize(), file.getContentType()));
+    }
+
+    /**
+     * 用户 VO 出参：头像由稳定引用换发成短期签名 URL。
+     *
+     * <p>换发失败时保留原值（历史裸路径或空），不抛异常——头像挂了不该让整个接口 500。
+     */
+    private SysUserVO signedUserVO(SysUser user) {
+        SysUserVO vo = SysUserVO.from(user);
+        fileUrlSignService.fillAvatarUrl(vo);
+        return vo;
+    }
+
+    /**
+     * 上传出参组装：fileId（字符串）+ fileRef（唯一可落库值）+ 签名 URL（即时预览用）。
+     *
+     * <p>签名 URL 换发失败时留空（前端回落到占位图），不抛异常——上传本身已经成功，
+     * 为一张预览图让整个上传失败不划算。
+     */
+    private FileUploadVO buildUploadVO(FileUploadResult result, String fileName, Long size, String mime) {
+        FileUploadVO vo = new FileUploadVO();
+        Long fileId = result.getFileId();
+        vo.setFileId(fileId == null ? null : String.valueOf(fileId));
+        vo.setFileRef(FileRefs.of(fileId));
+        vo.setFileName(fileName);
+        vo.setSize(size);
+        vo.setMime(mime);
+        if (fileId != null) {
+            String url = fileUrlSignService.signAttachment(fileId);
+            vo.setUrl(url);
+        }
+        return vo;
+    }
+
+    /**
+     * 校验头像引用：只接受 {@code file:{id}}，且文件必须归属当前用户（超管不限归属）。
+     *
+     * <p>⚠️ 这是防 IDOR 的关键一环：不校验的话，任何登录用户都能提交
+     * {@code avatar=file:<别人的文件ID>}，从而把别人的文件「挂」到自己名下并拿到签名直链。
+     *
+     * @return 校验通过后的引用；入参为空时返回 {@code null}（表示不改头像）
+     */
+    private String validateFileRef(String ref) {
+        if (StrUtil.isBlank(ref)) {
+            return null;
+        }
+        // 前端可能回传带签名的直显地址，先归一成稳定引用再校验归属
+        Long fileId = FileRefs.parseId(FileRefs.toStableRef(ref));
+        if (fileId == null) {
+            throw new BusinessException(FrameworkErrorCode.PARAM_ERROR.getCode(), "文件引用格式不正确");
+        }
+        Long ownerId = LoginUtil.isSuperAdmin() ? null : loginId();
+        SysFile file = sysFileService.getOwnedFile(fileId, ownerId);
+        if (file == null) {
+            throw new BusinessException(FrameworkErrorCode.PARAM_ERROR.getCode(), "文件不存在或无权使用");
+        }
+        return FileRefs.of(fileId);
     }
 
     // 登录态即可：本人资料（方法内仅取登录态用户），故不设权限码
@@ -819,13 +890,19 @@ public class SysUserController extends BaseController<SysUserService,SysUser> {
         update.setNickName(req.getNickName());
         update.setEmail(req.getEmail());
         update.setPhone(req.getPhone());
-        update.setAvatar(req.getAvatar());
+        // 头像只接受 file:{id} 且归属本人：否则任何人都能把他人的文件 ID 挂到自己名下（IDOR）
+        String avatarRef = validateFileRef(req.getAvatar());
+        if (avatarRef != null) {
+            update.setAvatar(avatarRef);
+        }
         service.updateById(update);
         SysUser fresh = service.getUser(currentId, null, null);
         service.setDataScope(fresh);
         LoginUtil.updateUser(fresh);
         // 出参走 VO 白名单：会话里仍存完整实体，只有响应体被裁剪
-        return R.success(SysUserVO.from(fresh));
+        SysUserVO vo = SysUserVO.from(fresh);
+        fileUrlSignService.fillAvatarUrl(vo);
+        return R.success(vo);
     }
 
     @Operation(summary = "当前用户登录日志")

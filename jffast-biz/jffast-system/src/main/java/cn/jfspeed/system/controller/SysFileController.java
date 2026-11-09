@@ -20,14 +20,17 @@ import cn.hutool.core.util.StrUtil;
 import cn.jfspeed.common.core.base.BaseConstant;
 import cn.jfspeed.common.core.enums.AuthErrorCode;
 import cn.jfspeed.common.core.exception.BusinessException;
+import cn.jfspeed.common.core.util.page.PageRes;
 import cn.jfspeed.common.data.base.BaseController;
-import cn.jfspeed.common.security.util.LoginUtil;
+import cn.jfspeed.common.security.util.FileUrlSignUtil;
 import cn.jfspeed.common.web.domain.dto.R;
 import cn.jfspeed.file.service.FileStorageService;
 import cn.jfspeed.log.annotation.SLog;
 import cn.jfspeed.security.annotation.RateLimit;
 import cn.jfspeed.system.domain.dto.SysFileQueryRequest;
+import cn.jfspeed.system.domain.vo.SysFileVO;
 import cn.jfspeed.system.entity.SysFile;
+import cn.jfspeed.system.service.FileUrlSignService;
 import cn.jfspeed.system.service.SysFileService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -38,10 +41,12 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.bind.annotation.*;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 文件管理（记录由 jffast-starter-file 上传时自动登记）
@@ -57,57 +62,57 @@ public class SysFileController extends BaseController<SysFileService, SysFile> {
     @Resource
     private FileStorageService fileStorageService;
 
-    /** 下载上限（字节），默认 50MB；0 表示不限制；大文件下载仍是 byte[] 全量，见 R-09 长期方案 */
+    @Resource
+    private FileUrlSignService fileUrlSignService;
+
+    /** 下载上限（字节），默认 50MB；0 表示不限制 */
     @Value("${jffast.file.download-max-bytes:52428800}")
     private long downloadMaxBytes;
 
     @GetMapping("/page")
     @SaCheckPermission(orRole = BaseConstant.ROLE_SUPER_ADMIN, value = "system:file:view")
     @Operation(summary = "文件分页列表")
-    public R page(SysFileQueryRequest query) {
-        return R.success(service.page(query, currentOwnerId()));
+    public R<PageRes<SysFileVO>> page(SysFileQueryRequest query) {
+        PageRes<SysFile> pageRes = service.page(query, service.currentOwnerId());
+        List<SysFile> files = pageRes.getList() == null ? List.of() : pageRes.getList();
+        // 批量换发签名 URL：一次查库，避免逐条查询的 N+1
+        Map<Long, String> signedUrls = fileUrlSignService.signAttachments(
+                files.stream().map(SysFile::getId).toList());
+        List<SysFileVO> voList = files.stream().map(file -> {
+            SysFileVO vo = new SysFileVO();
+            vo.setId(file.getId());
+            vo.setFileName(file.getFileName());
+            vo.setSize(file.getSize());
+            vo.setMime(file.getMime());
+            vo.setBizType(file.getBizType());
+            vo.setStorageType(file.getStorageType());
+            vo.setCreateBy(file.getCreateBy());
+            vo.setTenantId(file.getTenantId());
+            vo.setCreateTime(file.getCreateTime());
+            // 只出签名 URL，绝不出裸存储定位键
+            vo.setUrl(signedUrls.get(file.getId()));
+            return vo;
+        }).toList();
+        return R.success(new PageRes<>(pageRes.getTotal(), pageRes.getPages(), voList));
     }
 
     /**
-     * 当前请求可见的文件归属：超管返回 null（全量），普通用户返回自己的用户 ID。
+     * 换发签名 URL（管理页预览 / 前端长停留自愈）。
      *
-     * <p>⚠️ <b>取不到登录用户时必须拒绝，不能退化成 null</b>：本方法下游把 null 当作
-     * 「不限制归属」，于是 {@code getLoginUserId()} 返回 null（会话失效、Session 里没有 user、
-     * 读取会话抛异常被吞）时，一次会话读取失败就等于给全量文件开了后门——与本轮要堵的
-     * 越权洞同型，只是换了个触发路径。因此「超管」与「身份不可解析」必须分成两条路：
-     * 只有超管才允许 null。
+     * <p>必须先过归属校验（文件属于当前用户）才签发——否则「知道 ID」就等于「能读文件」。
      */
-    private Long currentOwnerId() {
-        if (LoginUtil.isSuperAdmin()) {
-            return null;
-        }
-        Long userId = LoginUtil.getLoginUserId();
-        if (userId == null) {
-            throw new BusinessException(AuthErrorCode.NOT_LOGIN.getCode(), "登录状态已失效，请重新登录");
-        }
-        return userId;
-    }
-
-    /**
-     * 按 id 取记录并校验归属。
-     *
-     * <p>越权与「记录不存在」必须是同一句提示、同一个分支：否则可以用返回值差异枚举出
-     * 哪些 id 属于别人（{@code /sys/task/download} 用的是同一口径）。
-     */
-    private SysFile getOwnedFile(Long id) {
-        SysFile file = service.getById(id);
-        if (file == null) {
-            return null;
-        }
-        Long ownerId = currentOwnerId();
-        return ownerId == null || ownerId.equals(file.getCreateBy()) ? file : null;
+    @GetMapping("/signed-url/{id}")
+    @Operation(summary = "换发文件签名 URL")
+    public R<SignedUrlVO> signedUrl(@PathVariable("id") Long id) {
+        String url = fileUrlSignService.signOwned(id);
+        return R.success(new SignedUrlVO(url, fileUrlSignService.ttlSeconds()));
     }
 
     @GetMapping("/download/{id}")
     @SaCheckPermission(orRole = BaseConstant.ROLE_SUPER_ADMIN, value = "system:file:download")
     @Operation(summary = "下载文件")
     public Object download(@PathVariable("id") Long id, HttpServletResponse response) throws IOException {
-        SysFile file = getOwnedFile(id);
+        SysFile file = service.getOwnedFile(id, service.currentOwnerId());
         if (file == null || StrUtil.isBlank(file.getUrl())) {
             // 抛业务异常（HTTP 200 + 业务码 400），由前端 blob 分支统一解析并弹出 message。
             //
@@ -116,24 +121,23 @@ public class SysFileController extends BaseController<SysFileService, SysFile> {
             // SysUserControllerAuthorizationCodeTest），而前端 shared/src/utils/request.ts
             // 的 blob 分支正是靠「HTTP 200 + JSON 业务体」识别下载失败并弹错；
             // 一旦改成 404，前端会走"404 不弹全局提示"分支 ⇒ 下载失败变成**零提示**。
-            throw new BusinessException("文件不存在或已清理");
+            throw new BusinessException(FileUrlSignUtil.INVALID_MESSAGE);
         }
         if (downloadMaxBytes > 0 && file.getSize() != null && file.getSize() > downloadMaxBytes) {
             throw new BusinessException("文件超过下载上限");
-        }
-        byte[] content;
-        try {
-            content = fileStorageService.downloadFile(file.getUrl());
-        } catch (Exception e) {
-            log.warn("下载文件失败：{}", file.getUrl(), e);
-            throw new BusinessException("文件不存在或已清理");
         }
         response.setContentType(StrUtil.isNotBlank(file.getMime()) ? file.getMime() : "application/octet-stream");
         response.setCharacterEncoding("utf-8");
         String fileName = StrUtil.isNotBlank(file.getFileName()) ? file.getFileName() : "file";
         response.setHeader("Content-disposition", "attachment;filename=" + URLEncoder.encode(fileName, StandardCharsets.UTF_8).replace("\\+", "%20"));
-        try (OutputStream out = response.getOutputStream()) {
-            out.write(content);
+        // 流式输出：不再整文件读进 byte[]（大文件会把堆撑爆）
+        try (InputStream in = fileStorageService.open(file.getUrl());
+             OutputStream out = response.getOutputStream()) {
+            in.transferTo(out);
+            out.flush();
+        } catch (Exception e) {
+            log.warn("下载文件失败：{}", file.getUrl(), e);
+            throw new BusinessException(FileUrlSignUtil.INVALID_MESSAGE);
         }
         return null;
     }
@@ -143,9 +147,9 @@ public class SysFileController extends BaseController<SysFileService, SysFile> {
     @SaCheckPermission(orRole = BaseConstant.ROLE_SUPER_ADMIN, value = "system:file:delete")
     @Operation(summary = "删除文件（记录 + 存储文件）")
     public R delete(@PathVariable("id") Long id) {
-        SysFile file = getOwnedFile(id);
+        SysFile file = service.getOwnedFile(id, service.currentOwnerId());
         if (file == null) {
-            throw new BusinessException("文件不存在或已清理");
+            throw new BusinessException(FileUrlSignUtil.INVALID_MESSAGE);
         }
         doDelete(file);
         return R.success();
@@ -160,7 +164,7 @@ public class SysFileController extends BaseController<SysFileService, SysFile> {
         if (ids != null) {
             for (Long id : ids) {
                 // 不属于本人的 id 静默跳过：批量接口逐个报错会把「存在但无权限」暴露成可枚举信号
-                SysFile file = getOwnedFile(id);
+                SysFile file = service.getOwnedFile(id, service.currentOwnerId());
                 if (file != null) {
                     doDelete(file);
                 }
@@ -178,5 +182,30 @@ public class SysFileController extends BaseController<SysFileService, SysFile> {
             throw new BusinessException("删除存储文件失败，记录未删除，请稍后重试");
         }
         service.removeById(file.getId());
+    }
+
+    /**
+     * 签名 URL 出参
+     */
+    public static class SignedUrlVO {
+
+        /** 签名 URL（API 根相对路径） */
+        private final String url;
+
+        /** 有效期（秒） */
+        private final long expiresIn;
+
+        public SignedUrlVO(String url, long expiresIn) {
+            this.url = url;
+            this.expiresIn = expiresIn;
+        }
+
+        public String getUrl() {
+            return url;
+        }
+
+        public long getExpiresIn() {
+            return expiresIn;
+        }
     }
 }

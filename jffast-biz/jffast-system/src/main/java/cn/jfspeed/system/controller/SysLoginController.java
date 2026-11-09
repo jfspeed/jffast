@@ -37,6 +37,7 @@ import cn.jfspeed.redis.util.RedisUtil;
 import cn.jfspeed.system.constant.SystemErrorCode;
 import cn.jfspeed.system.domain.dto.RouterVo;
 import cn.jfspeed.system.domain.vo.SysUserVO;
+import cn.jfspeed.system.service.FileUrlSignService;
 import cn.jfspeed.system.entity.SysLog;
 import cn.jfspeed.system.entity.SysMenu;
 import cn.jfspeed.system.entity.SysSafe;
@@ -82,6 +83,11 @@ public class SysLoginController {
 
     @Resource
     private SysSafeService sysSafeService;
+
+
+    @Resource
+
+    private FileUrlSignService fileUrlSignService;
     @Resource
     private SysUserService sysUserService;
     @Resource
@@ -136,7 +142,7 @@ public class SysLoginController {
         Map<String, Object> map = new HashMap<>();
         map.put("token",token);
         // 出参走 VO 白名单：password / salt / dataScope 等内部字段不再随响应外泄
-        map.put("user", SysUserVO.from(user));
+        map.put("user", signedUserVO(user));
 
         // 密码过期检查：pwdCycle > 0 时启用，单位天
         if (safe.getPwdCycle() != null && safe.getPwdCycle() > 0 && user.getUpdatePwdTime() != null) {
@@ -166,7 +172,7 @@ public class SysLoginController {
         }
 
         Map<String, Object> map = new HashMap<>();
-        map.put("user", SysUserVO.from(user));
+        map.put("user", signedUserVO(user));
 
         List<Long> roleIdList = LoginUtil.getRoleIdList();
         map.put("permissions", LoginUtil.getPermList(roleIdList));
@@ -481,4 +487,13 @@ public class SysLoginController {
         }
         return user;
     }
+    /**
+     * 登录出参：头像由稳定引用换发成短期签名 URL。
+     */
+    private SysUserVO signedUserVO(SysUser user) {
+        SysUserVO vo = SysUserVO.from(user);
+        fileUrlSignService.fillAvatarUrl(vo);
+        return vo;
+    }
+
 }

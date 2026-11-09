@@ -98,6 +98,24 @@ public class LocalFileStorageService implements FileStorageService {
         }
     }
 
+    /**
+     * 打开文件流（受控下载 / 签名直显用）。调用方负责关闭。
+     */
+    @Override
+    public InputStream open(String pathUrl) {
+        String relativePath = extractRelativePath(pathUrl);
+        try {
+            Path targetPath = resolveSafe(relativePath);
+            if (!Files.exists(targetPath) || Files.isDirectory(targetPath)) {
+                throw new BusinessException("文件不存在或已清理");
+            }
+            return Files.newInputStream(targetPath);
+        } catch (IOException e) {
+            log.error("打开文件失败", e);
+            throw new BusinessException("文件不存在或已清理");
+        }
+    }
+
     private String doUpload(String prefix, String filename, MultipartFile file) {
         String filePath = builderFilePath(prefix, filename);
         try {

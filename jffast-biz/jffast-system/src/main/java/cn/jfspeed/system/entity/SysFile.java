@@ -33,13 +33,22 @@ import lombok.EqualsAndHashCode;
 public class SysFile extends BaseEntity {
 
     /**
+     * 归属租户（0 = 平台/单租户，与 {@code sys_role} 同口径）。
+     *
+     * <p>显式映射：{@code BaseEntity.tenantId} 是 {@code @TableField(exist = false)}，
+     * 基座默认不映射该列——文件记录要按租户显式过滤，必须在本实体上重新声明。
+     */
+    @TableField("tenant_id")
+    private Long tenantId;
+
+    /**
      * 原始文件名
      */
     @TableField("file_name")
     private String fileName;
 
     /**
-     * 访问路径/URL
+     * 存储定位键（内部用，**禁止对外直出**）
      */
     @TableField("url")
     private String url;

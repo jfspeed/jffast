@@ -84,6 +84,15 @@ class EndpointPermissionAnnotationTest {
         WHITELIST.put("SysUserController#upload", "通用附件上传（个人资料场景），登录态 + @RateLimit 兜底");
         WHITELIST.put("SysUserController#uploadHead", "本人头像上传，登录态 + @RateLimit 兜底");
         WHITELIST.put("SysMenuController#routes", "返回当前用户自己的菜单树（前端装配路由），登录态即可");
+        // ---- 文件签名直显：匿名端点，凭票据而非凭登录态 ----
+        WHITELIST.put("SysFileViewController#view",
+                "签名直显端点：<img>/<t-avatar> 无法携带 Authorization 头，故凭短期 HMAC 票据匿名访问；"
+                        + "凭据是票据本身（验签 + 未过期 + path id 一致 + 票据租户 == 记录 tenant_id），"
+                        + "已在 SaTokenConfig 的 /sys/file/view/** 白名单与网关 /api/sys/file/view/** 放行");
+        WHITELIST.put("SysFileController#signedUrl",
+                "换发文件签名 URL：归属校验在服务层（文件必须属于当前用户，超管不限归属），"
+                        + "不设功能权限码——普通用户读自己的文件不该被 system:file:view 卡住，"
+                        + "而 system:file:download 之类的功能码管的是管理页的批量操作");
         WHITELIST.put("SysNotificationController#markAllAsRead", "本人通知，userId 取自登录态");
         WHITELIST.put("SysNotificationController#markAsRead", "本人通知，userId 取自登录态且服务层校验归属");
         WHITELIST.put("SysNotificationController#unreadCount", "本人通知未读角标，登录态即可");

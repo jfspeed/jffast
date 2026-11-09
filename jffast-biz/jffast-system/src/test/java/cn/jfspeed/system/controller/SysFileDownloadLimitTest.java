@@ -23,6 +23,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 
 import org.junit.jupiter.api.AfterEach;
@@ -77,6 +78,7 @@ class SysFileDownloadLimitTest {
         login = mockStatic(LoginUtil.class);
         login.when(LoginUtil::getLoginUserId).thenReturn(OWNER_ID);
         login.when(LoginUtil::isSuperAdmin).thenReturn(false);
+        when(service.currentOwnerId()).thenReturn(OWNER_ID);
     }
 
     @AfterEach
@@ -91,6 +93,7 @@ class SysFileDownloadLimitTest {
         file.setFileName("demo.xlsx");
         file.setSize(size);
         file.setCreateBy(OWNER_ID);
+        file.setTenantId(0L);
         return file;
     }
 
@@ -118,34 +121,35 @@ class SysFileDownloadLimitTest {
     @Test
     @DisplayName("超过上限：抛业务异常且不读取存储")
     void overLimitRejectedBeforeStorage() {
-        when(service.getById(1L)).thenReturn(file(101));
+        when(service.getOwnedFile(1L, OWNER_ID)).thenReturn(file(101));
         ReflectionTestUtils.setField(controller, "downloadMaxBytes", 100L);
 
         BusinessException ex = assertThrows(BusinessException.class,
                 () -> controller.download(1L, mock(HttpServletResponse.class)));
 
         assertEquals("文件超过下载上限", ex.getMessage());
-        verify(fileStorageService, never()).downloadFile("2026/10/19/demo.xlsx");
+        verify(fileStorageService, never()).open("2026/10/19/demo.xlsx");
     }
 
     @Test
     @DisplayName("上限为 0：不限制，正常输出")
     void zeroLimitMeansUnlimited() throws Exception {
-        when(service.getById(1L)).thenReturn(file(Long.MAX_VALUE));
-        when(fileStorageService.downloadFile("2026/10/19/demo.xlsx")).thenReturn(new byte[]{1, 2, 3});
+        when(service.getOwnedFile(1L, OWNER_ID)).thenReturn(file(Long.MAX_VALUE));
+        when(fileStorageService.open("2026/10/19/demo.xlsx"))
+                .thenReturn(new ByteArrayInputStream(new byte[]{1, 2, 3}));
         ReflectionTestUtils.setField(controller, "downloadMaxBytes", 0L);
         ByteArrayOutputStream sink = new ByteArrayOutputStream();
 
         controller.download(1L, response(sink));
 
         assertEquals(3, sink.size());
-        verify(fileStorageService).downloadFile("2026/10/19/demo.xlsx");
+        verify(fileStorageService).open("2026/10/19/demo.xlsx");
     }
 
     @Test
     @DisplayName("文件不存在：业务异常")
     void missingFileRejected() {
-        when(service.getById(2L)).thenReturn(null);
+        when(service.getOwnedFile(2L, OWNER_ID)).thenReturn(null);
 
         BusinessException ex = assertThrows(BusinessException.class,
                 () -> controller.download(2L, mock(HttpServletResponse.class)));

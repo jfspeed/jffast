@@ -29,6 +29,10 @@ import cn.jfspeed.demo.domain.dto.DemoExampleQueryRequest;
 import cn.jfspeed.demo.domain.dto.DemoExampleRequest;
 import cn.jfspeed.demo.entity.DemoExample;
 import cn.jfspeed.demo.service.DemoExampleService;
+import cn.jfspeed.demo.service.DemoImageSignService;
+import cn.jfspeed.common.file.FileRefs;
+import cn.jfspeed.common.file.FileUploadResult;
+import cn.jfspeed.common.file.FileUploadVO;
 import cn.jfspeed.excel.util.ExcelUtil;
 import cn.jfspeed.file.service.FileStorageService;
 import cn.jfspeed.log.annotation.SLog;
@@ -53,18 +57,27 @@ public class DemoExampleController extends BaseController<DemoExampleService, De
     @Autowired
     private FileStorageService fileStorageService;
 
+    @Autowired
+    private DemoImageSignService demoImageSignService;
+
     @GetMapping("/page")
     @SaCheckPermission(orRole = BaseConstant.ROLE_SUPER_ADMIN, value = "demo:example:view")
     @Operation(summary = "分页查询")
     public R page(DemoExampleQueryRequest query) {
-        return R.success(service.page(query));
+        cn.jfspeed.common.core.util.page.PageRes<DemoExample> pageRes = service.page(query);
+        fillImageUrls(pageRes.getList());
+        return R.success(pageRes);
     }
 
     @GetMapping("/detail/{id}")
     @SaCheckPermission(orRole = BaseConstant.ROLE_SUPER_ADMIN, value = "demo:example:view")
     @Operation(summary = "详情")
     public R detail(@PathVariable("id") Long id) {
-        return R.success(service.detail(id));
+        DemoExample detail = service.detail(id);
+        if (detail != null) {
+            fillImageUrls(java.util.List.of(detail));
+        }
+        return R.success(detail);
     }
 
     @SLog(title = "新增示例")
@@ -73,7 +86,7 @@ public class DemoExampleController extends BaseController<DemoExampleService, De
     @SaCheckPermission(orRole = BaseConstant.ROLE_SUPER_ADMIN, value = "demo:example:add")
     @Operation(summary = "新增")
     public R create(@RequestBody @Valid DemoExampleRequest req) {
-        service.saveWithItems(BeanUtil.copyProperties(req, DemoExample.class), req.getItems());
+        service.saveWithItems(toEntity(req), req.getItems());
         return R.success();
     }
 
@@ -83,7 +96,7 @@ public class DemoExampleController extends BaseController<DemoExampleService, De
     @SaCheckPermission(orRole = BaseConstant.ROLE_SUPER_ADMIN, value = "demo:example:update")
     @Operation(summary = "修改")
     public R update(@RequestBody @Valid DemoExampleRequest req) {
-        service.updateWithItems(BeanUtil.copyProperties(req, DemoExample.class), req.getItems());
+        service.updateWithItems(toEntity(req), req.getItems());
         return R.success();
     }
 
@@ -128,10 +141,56 @@ public class DemoExampleController extends BaseController<DemoExampleService, De
     @PostMapping("/upload")
     @SaCheckPermission(orRole = BaseConstant.ROLE_SUPER_ADMIN, value = "demo:example:update")
     @Operation(summary = "上传图片")
-    public R upload(@RequestParam("file") MultipartFile file) throws IOException {
+    public R<FileUploadVO> upload(@RequestParam("file") MultipartFile file) throws IOException {
         String fileName = file.getOriginalFilename() == null ? "image" : file.getOriginalFilename();
-        String imgUrl = fileStorageService.uploadImgFile("demo", fileName, file);
-        return R.success(imgUrl);
+        FileUploadResult result = fileStorageService.uploadFileWithRecord("demo", fileName, file, true);
+        FileUploadVO vo = new FileUploadVO();
+        Long fileId = result.getFileId();
+        vo.setFileId(fileId == null ? null : String.valueOf(fileId));
+        vo.setFileRef(FileRefs.of(fileId));
+        vo.setFileName(fileName);
+        vo.setSize(file.getSize());
+        vo.setMime(file.getContentType());
+        if (fileId != null) {
+            vo.setUrl(demoImageSignService.sign(vo.getFileRef()));
+        }
+        return R.success(vo);
+    }
+
+    /**
+     * 请求 → 实体：图片字段归一成**稳定引用** {@code file:{id}}。
+     *
+     * <p>前端回传的是带签名的直显地址（出参形态），直接落库会存下一条会过期的签名 URL；
+     * 这里统一还原成稳定引用，签名由读取时换发。
+     */
+    private DemoExample toEntity(DemoExampleRequest req) {
+        DemoExample entity = BeanUtil.copyProperties(req, DemoExample.class);
+        if (entity.getImage() != null) {
+            entity.setImage(FileRefs.toStableRef(entity.getImage()));
+        }
+        return entity;
+    }
+
+    /**
+     * 图片换发：出参 {@code image} 换成短期签名 URL，同时把稳定引用放进 {@code imageRef}。
+     *
+     * <p>前端展示用 image，提交用 imageRef——否则库里会存下会过期的签名 URL。
+     */
+    private void fillImageUrls(List<DemoExample> list) {
+        if (list == null || list.isEmpty()) {
+            return;
+        }
+        for (DemoExample item : list) {
+            if (item == null) {
+                continue;
+            }
+            String ref = item.getImage();
+            String signed = demoImageSignService.sign(ref);
+            if (signed != null) {
+                item.setImageRef(ref);
+                item.setImage(signed);
+            }
+        }
     }
 
     @PutMapping("/updateStatus")

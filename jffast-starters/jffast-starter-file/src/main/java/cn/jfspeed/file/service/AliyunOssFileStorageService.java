@@ -138,6 +138,21 @@ public class AliyunOssFileStorageService implements FileStorageService {
         }
     }
 
+    /**
+     * 打开对象流（受控下载 / 签名直显用）。调用方负责关闭。
+     */
+    @Override
+    public InputStream open(String pathUrl) {
+        ObjectKey objectKey = parseObjectKey(pathUrl);
+        try {
+            OSSObject ossObject = ossClient.getObject(objectKey.bucket, objectKey.key);
+            return ossObject.getObjectContent();
+        } catch (Exception e) {
+            log.error("打开文件失败", e);
+            throw new BusinessException("文件不存在或已清理");
+        }
+    }
+
     /** 解析 /{bucket}/{key}（允许带 endpoint 前缀与前导斜杠） */
     private ObjectKey parseObjectKey(String pathUrl) {
         String key = pathUrl;

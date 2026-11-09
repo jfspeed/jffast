@@ -70,8 +70,14 @@ public class SaTokenConfig implements WebMvcConfigurer {
     // 未登录请求在进入静态处理器前就被 StpUtil.checkLogin() 拦成 401。
     // 影响面：浏览器 <img>/直链依赖 Sa-Token 的 cookie 携带登录态（dev 代理与生产 nginx 均同源）；
     // 跨域直链、邮件/第三方嵌入不再可读——这是预期行为，需要匿名分享的资源请走带签名的下载接口。
+    //
+    // ✅ /sys/file/view/**：文件签名直显端点，**凭签名而非凭登录态**放行。
+    // 该端点自带 HMAC 验签 + 过期校验 + 租户比对，签名即凭据；
+    // 正是为了让 <img src> 这类无法携带 Authorization 头的场景能安全直显，
+    // 才把「登录态」换成「短期签名」。同时静态映射 /upload/** 已删除，
+    // 直显路径只剩这一条有校验的入口。
     private static final List<String> AUTH_WHITELIST = Arrays.asList(
-            "/error", "/ws/**"
+            "/error", "/ws/**", "/sys/file/view/**"
     );
 
     /**

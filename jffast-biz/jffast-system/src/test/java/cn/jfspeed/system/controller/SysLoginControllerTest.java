@@ -20,6 +20,7 @@ import cn.jfspeed.common.security.spi.LoginPolicyProvider;
 import cn.jfspeed.common.security.util.LoginUtil;
 import cn.jfspeed.redis.util.RedisUtil;
 import cn.jfspeed.system.entity.SysUser;
+import cn.jfspeed.system.service.FileUrlSignService;
 import cn.jfspeed.system.service.SysLogService;
 import cn.jfspeed.system.service.SysMenuService;
 import cn.jfspeed.system.service.SysSafeService;
@@ -78,6 +79,8 @@ class SysLoginControllerTest {
     @Mock
     private SysMenuService sysMenuService;
     @Mock
+    private FileUrlSignService fileUrlSignService;
+    @Mock
     private ObjectProvider<LoginPolicyProvider> loginPolicyProvider;
 
     @InjectMocks
@@ -92,6 +95,7 @@ class SysLoginControllerTest {
         ReflectionTestUtils.setField(controller, "sysUserService", sysUserService);
         ReflectionTestUtils.setField(controller, "sysLogService", sysLogService);
         ReflectionTestUtils.setField(controller, "sysMenuService", sysMenuService);
+        ReflectionTestUtils.setField(controller, "fileUrlSignService", fileUrlSignService);
         mockMvc = MockMvcBuilders.standaloneSetup(controller).build();
     }
 

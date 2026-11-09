@@ -73,11 +73,14 @@ public class WebMvcConfig implements WebMvcConfigurer {
 
     @Override
     public void addResourceHandlers(ResourceHandlerRegistry registry) {
-        // 本地文件存储访问映射：/upload/** 由静态处理器直出磁盘（与 jffast.file.storage.local.access-path=/upload 对应）
-        // 绝对路径避免相对路径解析不一致导致上传后 404。
-        // 注意：本映射不提供鉴权，登录校验由 SaTokenConfig 的拦截器完成（/upload/** 不在免登录白名单里）。
-        File baseDir = Paths.get(uploadBasePath).toAbsolutePath().normalize().toFile();
-        registry.addResourceHandler("/upload/**").addResourceLocations(baseDir.toURI().toString());
+        // ⚠️ 本地文件存储访问映射（/upload/**）**已删除**。
+        //
+        // 原因：静态资源映射直出磁盘，且不带任何归属校验——只要拿到路径就能读，
+        // 登录即可读任意路径（审计 P3-9 / H-4）。现在文件读取统一收口到
+        // /sys/file/view/{id}?ticket=...（签名直显）与 /sys/file/download/{id}（受控下载），
+        // 两者都经过归属 + 租户校验；静态映射保留会让归属模型形同虚设。
+        //
+        // 需要外部分享文件时请调 GET /sys/file/signed-url/{id} 换发短期签名 URL。
         /** 历史 Knife4j 入口占位（当前无 knife4j 静态资源，404；官方适配 Boot 4 后回切时恢复） */
         registry.addResourceHandler("/doc.html").addResourceLocations("classpath:/META-INF/resources/");
         /** 公共部分内容 */
@@ -85,13 +88,16 @@ public class WebMvcConfig implements WebMvcConfigurer {
     }
 
     /**
-     * /upload/** 静态资源响应头加固：文件可被浏览器直接打开，若被同源内联打开，
-     * 恶意文件可能执行脚本（存储型 XSS）。此处兜底（即使已要求登录，也不假定内容可信）：
+     * 文件直显响应头加固：上传的文件可被浏览器直接打开，若被同源内联打开，
+     * 恶意文件可能执行脚本（存储型 XSS）。此处兜底（不假定内容可信）：
      * <ul>
      *   <li>{@code X-Content-Type-Options: nosniff} —— 阻止浏览器把 text/plain 等嗅探成 HTML 执行</li>
      *   <li>{@code Content-Security-Policy: sandbox} —— 直接访问 SVG/HTML 等资源时禁用脚本</li>
      * </ul>
      * 与 {@code LocalFileStorageService} 的上传扩展名拒绝共同构成两层防护。
+     *
+     * <p>挂载路径从 {@code /upload/*} 改为 {@code /sys/file/view/*}（静态映射已删，
+     * 直显只剩这条有校验的入口）。
      */
     @Bean
     public FilterRegistrationBean<Filter> uploadSecurityHeaderFilter() {
@@ -103,7 +109,7 @@ public class WebMvcConfig implements WebMvcConfigurer {
             chain.doFilter(request, response);
         };
         FilterRegistrationBean<Filter> registration = new FilterRegistrationBean<>(filter);
-        registration.addUrlPatterns("/upload/*");
+        registration.addUrlPatterns("/sys/file/view/*");
         registration.setName("uploadSecurityHeaderFilter");
         registration.setOrder(Ordered.LOWEST_PRECEDENCE);
         return registration;

@@ -74,6 +74,10 @@ import org.springframework.beans.factory.annotation.Value;
 @Service
 public class SysUserService extends BaseService<SysUserMapper, SysUser>{
 
+    /** 头像签名 URL 换发 */
+    @Resource
+    private FileUrlSignService fileUrlSignService;
+
     @Resource
     private SysDeptService sysDeptService;
     @Resource
@@ -517,7 +521,10 @@ public class SysUserService extends BaseService<SysUserMapper, SysUser>{
         // 出参走 VO 白名单（与 /all、/detail 同口径）：列表 SQL 是 `select u.*`，
         // 直接返回实体把 tenantId / updatePwdTime / isBusinessUser 等内部列一起发给前端。
         PageRes<SysUser> pageRes = PageUtil.resultPageMp(baseMapper.page(pageReq.getPage(), map));
-        return new PageRes<>(pageRes.getTotal(), pageRes.getPages(), SysUserVO.fromList(pageRes.getList()));
+        List<SysUserVO> voList = SysUserVO.fromList(pageRes.getList());
+        // 头像由稳定引用换发成短期签名 URL（批量，避免 N+1 查询）
+        fileUrlSignService.fillAvatarUrls(voList);
+        return new PageRes<>(pageRes.getTotal(), pageRes.getPages(), voList);
     }
 
     public boolean checkUserNameAndPhone(String userName,String phone,Long id) {

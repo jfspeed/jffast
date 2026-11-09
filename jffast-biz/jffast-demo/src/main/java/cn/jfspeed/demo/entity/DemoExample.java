@@ -106,8 +106,16 @@ public class DemoExample extends BaseEntity {
     private String icon;
 
     @TableField("image")
-    @Schema(description = "图片")
+    @Schema(description = "图片（出参为签名 URL，落库为 file:{id} 稳定引用）")
     private String image;
+
+    /**
+     * 图片稳定引用（{@code file:{id}}）：出参里 {@code image} 是短期签名 URL（会过期），
+     * 提交表单必须用这个稳定引用，否则库里会存下一条会过期的签名 URL。
+     */
+    @TableField(exist = false)
+    @Schema(description = "图片稳定引用（提交用）")
+    private String imageRef;
 
     @TableField("publish_time")
     @Schema(description = "发布时间")
