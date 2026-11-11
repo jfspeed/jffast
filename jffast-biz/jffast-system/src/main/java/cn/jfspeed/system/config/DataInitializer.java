@@ -37,6 +37,10 @@ import org.springframework.stereotype.Component;
  * 放在那里等于每个工程各存一份副本，副本之间迟早漂移（已经出现过退化到「配置为空就直接
  * 写入空口令」的一版）。本模块是它们的公共依赖，住在这里才能一处维护。
  * <p>
+ * <b>有意全量</b>：本 Runner 不经租户过滤器（CommandLineRunner 由启动线程执行），
+ * 目标行是平台种子数据——固定 id 定点写 {@code sys_user(admin)}，平台级账号与租户无关，
+ * 不需要租户上下文。
+ * <p>
  * <b>口令来源</b>（按优先级）：
  * <ol>
  *   <li>环境变量 {@code JFFAST_INIT_PASSWORD} / 配置 {@code jffast.system.init-password}；</li>
