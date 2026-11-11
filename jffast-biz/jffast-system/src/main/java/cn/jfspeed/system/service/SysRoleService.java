@@ -258,7 +258,7 @@ public class SysRoleService extends BaseService<SysRoleMapper, SysRole>{
                             ? menu.getName() : String.valueOf(menuId);
                 })
                 .collect(Collectors.joining("、"));
-        throw new BusinessException(403,
+        throw new BusinessException(AuthErrorCode.FORBIDDEN.getCode(),
                 "「租户管理」是平台级菜单，仅超级管理员角色可授权；请从该角色的菜单中移除：" + names);
     }
 

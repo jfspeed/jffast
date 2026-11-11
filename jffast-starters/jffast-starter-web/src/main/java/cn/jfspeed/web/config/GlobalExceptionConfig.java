@@ -15,7 +15,6 @@
  */
 package cn.jfspeed.web.config;
 
-import java.nio.charset.StandardCharsets;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.validation.BindException;
@@ -29,8 +28,6 @@ import org.springframework.web.bind.annotation.ResponseBody;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
-import org.springframework.web.util.ContentCachingRequestWrapper;
-import org.springframework.web.util.WebUtils;
 
 import cn.hutool.json.JSONUtil;
 import cn.jfspeed.common.core.base.BaseConstant;
@@ -169,13 +166,5 @@ public class GlobalExceptionConfig {
         return error;
     }
 
-    private String getRequestBody(HttpServletRequest request) {
-        ContentCachingRequestWrapper requestWrapper =
-                WebUtils.getNativeRequest(request, ContentCachingRequestWrapper.class);
-        if (requestWrapper == null) {
-            return "";
-        }
-        return new String(requestWrapper.getContentAsByteArray(), StandardCharsets.UTF_8);
-    }
-
 }
+

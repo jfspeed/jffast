@@ -33,13 +33,7 @@ public class PageReq<T>  {
     private Integer pageNo = 1;
     @Schema(description  = "每页的数量")
     private Integer pageSize =10;
-    @Schema(
-            hidden = true
-    )
-    private String ascs;
     @Schema(hidden = true)
-    private String descs;
-    @Schema(hidden = true )
     private T queryBean;
 
     public PageReq() {
