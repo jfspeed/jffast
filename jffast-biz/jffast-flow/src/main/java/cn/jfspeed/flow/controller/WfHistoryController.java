@@ -18,6 +18,7 @@ package cn.jfspeed.flow.controller;
 import cn.dev33.satoken.annotation.SaCheckPermission;
 import cn.jfspeed.common.core.base.BaseConstant;
 import cn.jfspeed.common.core.exception.BusinessException;
+import cn.jfspeed.common.core.util.page.PageRes;
 import cn.jfspeed.common.security.util.LoginUtil;
 import cn.jfspeed.common.web.domain.dto.R;
 import cn.jfspeed.flow.domain.vo.WfHistoricProcessInstanceVO;
@@ -73,10 +74,7 @@ public class WfHistoryController {
                             : nameCache.computeIfAbsent(processDefinitionId, flowService::getProcessDefinitionName);
                     return WfHistoricTaskVO.from(task, processDefinitionName);
                 }).toList();
-        Map<String, Object> result = new HashMap<>(4);
-        result.put("total", total);
-        result.put("list", list);
-        return R.success(result);
+        return R.success(new PageRes<>(total, pagesOf(total, pageSize), list));
     }
 
     @GetMapping("/instance/page")
@@ -95,10 +93,7 @@ public class WfHistoryController {
         List<WfHistoricProcessInstanceVO> list = flowService.listHistoricProcessInstances(processKey, initiatorUserId,
                         (pageNo - 1) * pageSize, pageSize)
                 .stream().map(WfHistoricProcessInstanceVO::from).toList();
-        Map<String, Object> result = new HashMap<>(4);
-        result.put("total", total);
-        result.put("list", list);
-        return R.success(result);
+        return R.success(new PageRes<>(total, pagesOf(total, pageSize), list));
     }
 
     @GetMapping("/instance/{processInstanceId}/tasks")
@@ -122,5 +117,10 @@ public class WfHistoryController {
         }
         flowAccessService.checkProcessReadable(processInstanceId, flowAccessService.currentUserId());
         return R.success(WfHistoricProcessInstanceVO.from(instance));
+    }
+
+    /** 总页数与 MyBatis-Plus Page#getPages 同口径（size<=0 记 0 页）。 */
+    private static long pagesOf(long total, int pageSize) {
+        return pageSize <= 0 ? 0L : (total + pageSize - 1) / pageSize;
     }
 }

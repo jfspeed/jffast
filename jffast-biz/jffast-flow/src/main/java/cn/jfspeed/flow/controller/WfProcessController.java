@@ -18,6 +18,7 @@ package cn.jfspeed.flow.controller;
 import cn.dev33.satoken.annotation.SaCheckPermission;
 import cn.jfspeed.common.core.base.BaseConstant;
 import cn.jfspeed.common.core.exception.BusinessException;
+import cn.jfspeed.common.core.util.page.PageRes;
 import cn.jfspeed.common.web.domain.dto.R;
 import cn.jfspeed.flow.domain.dto.WfDeployRequest;
 import cn.jfspeed.flow.domain.vo.WfProcessDefinitionVO;
@@ -44,9 +45,7 @@ import org.springframework.web.bind.annotation.RestController;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 
 /**
  * 流程定义 / 部署 / 实例管理 Controller。
@@ -102,10 +101,7 @@ public class WfProcessController {
         // 直接交给 Jackson 序列化会在响应体写出时抛 NPE → code=500、页面拿不到数据。
         List<WfProcessDefinitionVO> list = flowService.listProcessDefinitions(processKey, category, (pageNo - 1) * pageSize, pageSize)
                 .stream().map(WfProcessDefinitionVO::from).toList();
-        Map<String, Object> result = new HashMap<>(4);
-        result.put("total", total);
-        result.put("list", list);
-        return R.success(result);
+        return R.success(new PageRes<>(total, pagesOf(total, pageSize), list));
     }
 
     @GetMapping("/definition/{processDefinitionId}/xml")
@@ -176,10 +172,7 @@ public class WfProcessController {
         // 坑在于"没有实例时这个接口是好的"，所以只有真的跑起流程才会暴露。
         List<WfProcessInstanceVO> list = flowService.listProcessInstances(processKey, initiatorUserId, (pageNo - 1) * pageSize, pageSize)
                 .stream().map(WfProcessInstanceVO::from).toList();
-        Map<String, Object> result = new HashMap<>(4);
-        result.put("total", total);
-        result.put("list", list);
-        return R.success(result);
+        return R.success(new PageRes<>(total, pagesOf(total, pageSize), list));
     }
 
     @SLog(title = "取消流程实例")
@@ -195,5 +188,10 @@ public class WfProcessController {
         flowAccessService.checkProcessCancelable(processInstanceId, flowAccessService.currentUserId());
         flowService.cancelProcessInstance(processInstanceId, reason);
         return R.success();
+    }
+
+    /** 总页数与 MyBatis-Plus Page#getPages 同口径（size<=0 记 0 页）。 */
+    private static long pagesOf(long total, int pageSize) {
+        return pageSize <= 0 ? 0L : (total + pageSize - 1) / pageSize;
     }
 }

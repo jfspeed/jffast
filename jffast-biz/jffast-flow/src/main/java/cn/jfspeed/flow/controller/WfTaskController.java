@@ -19,6 +19,7 @@ import cn.dev33.satoken.annotation.SaCheckPermission;
 import cn.hutool.core.util.StrUtil;
 import cn.jfspeed.common.core.base.BaseConstant;
 import cn.jfspeed.common.core.exception.BusinessException;
+import cn.jfspeed.common.core.util.page.PageRes;
 import cn.jfspeed.common.web.domain.dto.R;
 import cn.jfspeed.flow.domain.dto.WfCompleteTaskRequest;
 import cn.jfspeed.flow.domain.vo.WfHistoricTaskVO;
@@ -76,10 +77,7 @@ public class WfTaskController {
         int safePageSize = normalizePageSize(pageSize);
         long total = flowService.countTodoTasks(userId);
         List<WfTaskVO> list = toTaskVOs(flowService.listTodoTasks(userId, offsetOf(safePageNo, safePageSize), safePageSize));
-        Map<String, Object> result = new HashMap<>(4);
-        result.put("total", total);
-        result.put("list", list);
-        return R.success(result);
+        return R.success(new PageRes<>(total, pagesOf(total, safePageSize), list));
     }
 
     @GetMapping("/candidate/page")
@@ -92,10 +90,7 @@ public class WfTaskController {
         int safePageSize = normalizePageSize(pageSize);
         long total = flowService.countCandidateTasks(userId);
         List<WfTaskVO> list = toTaskVOs(flowService.listCandidateTasks(userId, offsetOf(safePageNo, safePageSize), safePageSize));
-        Map<String, Object> result = new HashMap<>(4);
-        result.put("total", total);
-        result.put("list", list);
-        return R.success(result);
+        return R.success(new PageRes<>(total, pagesOf(total, safePageSize), list));
     }
 
     @SLog(title = "签收任务")
@@ -188,6 +183,11 @@ public class WfTaskController {
     static int offsetOf(int pageNo, int pageSize) {
         long offset = (long) (pageNo - 1) * pageSize;
         return offset > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) offset;
+    }
+
+    /** 总页数与 MyBatis-Plus Page#getPages 同口径（size<=0 记 0 页）。 */
+    private static long pagesOf(long total, int pageSize) {
+        return pageSize <= 0 ? 0L : (total + pageSize - 1) / pageSize;
     }
 
     /**
