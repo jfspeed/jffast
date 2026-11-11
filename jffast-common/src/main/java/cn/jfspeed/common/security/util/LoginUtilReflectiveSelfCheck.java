@@ -15,8 +15,10 @@
  */
 package cn.jfspeed.common.security.util;
 
+import cn.jfspeed.common.security.spi.LoginDataSource;
 import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Component;
 
 import java.lang.reflect.Method;
@@ -26,20 +28,23 @@ import java.util.List;
 /**
  * LoginUtil 反射调用启动期自检。
  *
- * <p>LoginUtil 出于模块解耦（common 不能依赖 system）大量使用 {@code Class.forName(...).getMethod(...)}。
- * 这类调用绕过了 javac 的编译期检查，方法改名/改参后只有运行到对应代码路径才会抛
- * {@link NoSuchMethodException}（且多数被吞成“系统异常/静默失败”）。
- *
- * <p>本自检在应用启动时把 LoginUtil 依赖的全部反射目标解析一遍：
+ * <p>LoginUtil 中仍有两类动态调用绕过 javac 的编译期检查，本自检在启动期把它们解析一遍：
  * <ul>
- *     <li>目标类在类路径上但方法签名不匹配 → 输出醒目的 WARN 日志（列出所有漂移的方法），便于“提前发现”；</li>
- *     <li>目标类本身不在类路径（如某些未引入 system 的场景）→ 直接跳过，不影响启动。</li>
+ *     <li><b>能力探测</b>（RedisUtil / Sa-Token）：探测的是可选依赖装没装，语义是能力开关，
+ *     保持反射形式；签名漂移时输出醒目的 WARN 日志。</li>
+ *     <li><b>会话内用户对象的动态访问器</b>（SysUser/SysRole/SysMenu 的 getter/setter）：
+ *     操作对象是运行期会话里的实体，编译期无法绑定，保留反射形式；签名漂移时输出 WARN。</li>
  * </ul>
  *
- * <p>说明：此处采用“日志告警”而非“启动即失败”，是因为 LoginUtil 的若干反射调用历史上即有
- * try/catch 容错（例如 {@code getById} 在 MyBatis-Plus 下实际签名是 {@code Serializable}，
- * 此前用 {@code Object.class} 解析不到会静默失败；现已修正为 {@code Serializable.class}）。
- * 若要把这些点也升级为启动即失败，把下方 {@code checkClass} 收集到的缺失项改为
+ * <p>历史背景：LoginUtil 曾用 {@code Class.forName + invoke} 反射跨层调 system 服务
+ * （SysRoleMenuService / SysMenuService / SysUserService）。该 4 处已由
+ * {@link LoginDataSource} SPI 化（system 模块提供实现，编译期直调），签名漂移直接编译红，
+ * 对应的反射自检随之失效化并移除。SPI 化后保留一项防御：
+ * <b>system 模块在类路径上但 LoginDataSource 实现未注册</b>（组件扫描漏配等）→ WARN，
+ * 此时鉴权数据源会按「warn + 返回空」降级，权限表现为空，必须提前发现。
+ *
+ * <p>说明：此处采用「日志告警」而非「启动即失败」，与历史口径一致；
+ * 若要升级为启动即失败，把 {@code checkClass} 收集到的缺失项改为
  * {@code throw new IllegalStateException(...)} 即可。
  *
  * @author jffast
@@ -48,29 +53,25 @@ import java.util.List;
 @Component
 public class LoginUtilReflectiveSelfCheck {
 
+    /** system 模块的标志类：类路径上有它而 LoginDataSource 未注册，即 SPI 实现漏注册 */
+    private static final String SYSTEM_MODULE_MARKER_CLASS = "cn.jfspeed.system.service.SysRoleMenuService";
+
+    private final ObjectProvider<LoginDataSource> loginDataSourceProvider;
+
+    public LoginUtilReflectiveSelfCheck(ObjectProvider<LoginDataSource> loginDataSourceProvider) {
+        this.loginDataSourceProvider = loginDataSourceProvider;
+    }
+
     @PostConstruct
     public void selfCheck() {
         List<String> missing = new ArrayList<>();
 
-        // RedisUtil（redis starter）
+        // RedisUtil（redis starter）—— LoginUtil 能力探测，保持反射
         checkClass(missing, "cn.jfspeed.redis.util.RedisUtil",
                 method("hget", String.class, String.class),
                 method("hset", String.class, String.class, Object.class));
 
-        // SysRoleMenuService
-        checkClass(missing, "cn.jfspeed.system.service.SysRoleMenuService",
-                method("listAllMenuIdList", Long.class),
-                method("listAllBtnPerm", Long.class));
-
-        // SysMenuService
-        checkClass(missing, "cn.jfspeed.system.service.SysMenuService",
-                method("selectMenuList", java.util.Map.class));
-
-        // SysUserService（MyBatis-Plus IService.getById 实际签名为 Serializable，必须用 Serializable.class）
-        checkClass(missing, "cn.jfspeed.system.service.SysUserService",
-                method("getById", java.io.Serializable.class));
-
-        // SysUser 实体字段访问器（Lombok @Data 生成）
+        // SysUser 实体字段访问器（Lombok @Data 生成；会话内对象动态访问，保持反射）
         checkClass(missing, "cn.jfspeed.system.entity.SysUser",
                 method("getId"),
                 method("setPassword", String.class),
@@ -100,6 +101,12 @@ public class LoginUtilReflectiveSelfCheck {
             log.warn("LoginUtil 反射自检发现 {} 处方法签名不匹配/缺失（运行到对应路径才会真正报错，请尽快核对）：\n  - {}",
                     missing.size(), String.join("\n  - ", missing));
         }
+
+        // SPI 实现漏注册防御：system 模块在类路径上但 LoginDataSource 未注册 → 数据源降级为空
+        if (isClassPresent(SYSTEM_MODULE_MARKER_CLASS) && loginDataSourceProvider.getIfAvailable() == null) {
+            log.warn("检测到 system 模块在类路径上，但 LoginDataSource SPI 实现未注册——"
+                    + "菜单/权限数据将按空降级（登录用户无任何权限），请检查组件扫描是否覆盖 cn.jfspeed.system.security");
+        }
     }
 
     private void checkClass(List<String> missing, String className, MethodSpec... specs) {
@@ -117,6 +124,15 @@ public class LoginUtilReflectiveSelfCheck {
             } catch (NoSuchMethodException e) {
                 missing.add(simpleName + "." + spec.describe());
             }
+        }
+    }
+
+    private static boolean isClassPresent(String className) {
+        try {
+            Class.forName(className, false, LoginUtilReflectiveSelfCheck.class.getClassLoader());
+            return true;
+        } catch (Throwable t) {
+            return false;
         }
     }
 

@@ -22,6 +22,7 @@ import cn.hutool.extra.spring.SpringUtil;
 import cn.jfspeed.common.core.base.BaseConstant;
 import cn.jfspeed.common.core.enums.AuthErrorCode;
 import cn.jfspeed.common.security.domain.dto.LoginUser;
+import cn.jfspeed.common.security.spi.LoginDataSource;
 import cn.jfspeed.common.core.exception.BusinessException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.BeanUtils;
@@ -41,6 +42,17 @@ public class LoginUtil {
 
     /** 角色菜单 ID 缓存的存活秒数，与 SysRoleMenuService 的权限缓存 TTL 保持同口径 */
     private static final long MENU_ID_CACHE_TTL_SECONDS = 3600L;
+
+    /**
+     * 解析 {@link LoginDataSource} SPI 实现（system 模块提供，编译期直调服务）。
+     *
+     * <p>纯 common 栈未装 system 模块时返回 null，调用方按「warn + 返回空」降级，
+     * 与历史上 {@code ClassNotFoundException} 分支等价。上下文未就绪等异常不在此吞，
+     * 交由调用点的通用 catch 处理（与历史 {@code SpringUtil.getBean} 行为一致）。
+     */
+    private static LoginDataSource loginDataSource() {
+        return SpringUtil.getApplicationContext().getBeanProvider(LoginDataSource.class).getIfAvailable();
+    }
 
     @SuppressWarnings("unchecked")
     private static <T> T redisHget(String key, String field) {
@@ -225,13 +237,14 @@ public class LoginUtil {
                 menuIdList.addAll(cached);
             } else {
                 try {
-                    Class<?> serviceClass = Class.forName("cn.jfspeed.system.service.SysRoleMenuService");
-                    Object service = SpringUtil.getBean(serviceClass);
-                    List<Long> menuids = (List<Long>) serviceClass.getMethod("listAllMenuIdList", Long.class).invoke(service, roleId);
-                    menuIdList.addAll(menuids);
-                    redisHset(BaseConstant.CACHE_ALL_MENU_ID_LIST, roleId + "", menuids, MENU_ID_CACHE_TTL_SECONDS);
-                } catch (ClassNotFoundException e) {
-                    log.warn("SysRoleMenuService not available");
+                    LoginDataSource dataSource = loginDataSource();
+                    if (dataSource == null) {
+                        log.warn("LoginDataSource not available");
+                    } else {
+                        List<Long> menuids = dataSource.listAllMenuIdList(roleId);
+                        menuIdList.addAll(menuids);
+                        redisHset(BaseConstant.CACHE_ALL_MENU_ID_LIST, roleId + "", menuids, MENU_ID_CACHE_TTL_SECONDS);
+                    }
                 } catch (Exception e) {
                     log.error("Failed to get menu id list", e);
                 }
@@ -256,28 +269,28 @@ public class LoginUtil {
         if (CollUtil.isNotEmpty(roleIdList)) {
             if (roleIdList.contains(BaseConstant.ROLE_ID_SUPER_ADMIN_LONG)) {
                 try {
-                    // 超管权限全集：SysMenuService 内部带 TTL 缓存，菜单变更时失效，
-                    // 避免每次鉴权都全表扫描 sys_menu
-                    Class<?> serviceClass = Class.forName("cn.jfspeed.system.service.SysMenuService");
-                    Object service = SpringUtil.getBean(serviceClass);
-                    List<String> perms = (List<String>) serviceClass.getMethod("listAllBtnPerm").invoke(service);
-                    permList.addAll(perms);
-                } catch (ClassNotFoundException e) {
-                    log.warn("SysMenuService not available");
+                    LoginDataSource dataSource = loginDataSource();
+                    if (dataSource == null) {
+                        log.warn("LoginDataSource not available");
+                    } else {
+                        // 超管权限全集：实现内部带 TTL 缓存，菜单变更时失效，
+                        // 避免每次鉴权都全表扫描 sys_menu
+                        permList.addAll(dataSource.listAllBtnPerm());
+                    }
                 } catch (Exception e) {
                     log.error("Failed to get perm list", e);
                 }
             } else {
-                // 统一走 SysRoleMenuService 的带 TTL 缓存；旧的无 TTL 哈希路径已废弃，
+                // 统一走带 TTL 缓存的按角色按钮权限；旧的无 TTL 哈希路径已废弃，
                 // 否则角色绑定变更后权限会永久停留在旧值
                 for (Long roleId : roleIdList) {
                     try {
-                        Class<?> serviceClass = Class.forName("cn.jfspeed.system.service.SysRoleMenuService");
-                        Object service = SpringUtil.getBean(serviceClass);
-                        List<String> perms = (List<String>) serviceClass.getMethod("listAllBtnPerm", Long.class).invoke(service, roleId);
-                        permList.addAll(perms);
-                    } catch (ClassNotFoundException e) {
-                        log.warn("SysRoleMenuService not available");
+                        LoginDataSource dataSource = loginDataSource();
+                        if (dataSource == null) {
+                            log.warn("LoginDataSource not available");
+                        } else {
+                            permList.addAll(dataSource.listAllBtnPerm(roleId));
+                        }
                     } catch (Exception e) {
                         log.error("Failed to get perm list", e);
                     }
@@ -418,17 +431,18 @@ public class LoginUtil {
         }
         try {
             Object id = current.getClass().getMethod("getId").invoke(current);
-            Class<?> serviceClass = Class.forName("cn.jfspeed.system.service.SysUserService");
-            Object service = SpringUtil.getBean(serviceClass);
-            Object fresh = serviceClass.getMethod("getById", Serializable.class).invoke(service, id);
+            LoginDataSource dataSource = loginDataSource();
+            if (dataSource == null) {
+                log.warn("LoginDataSource not available");
+                return;
+            }
+            Object fresh = dataSource.getFreshUser((Serializable) id);
             if (fresh != null) {
                 Object roleList = current.getClass().getMethod("getRoleList").invoke(current);
                 fresh.getClass().getMethod("setRoleList", List.class).invoke(fresh, roleList);
                 clearCredentials(fresh);
                 StpUtil.getSession().set("user", fresh);
             }
-        } catch (ClassNotFoundException e) {
-            log.warn("SysUserService not available");
         } catch (Exception e) {
             log.error("Failed to refresh login user", e);
         }

@@ -32,11 +32,14 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.MockedStatic;
+import org.springframework.context.annotation.AnnotationConfigApplicationContext;
 
 import cn.hutool.extra.spring.SpringUtil;
 import cn.jfspeed.common.core.base.BaseConstant;
+import cn.jfspeed.common.security.spi.LoginDataSource;
 import cn.jfspeed.common.security.util.LoginUtil;
 import cn.jfspeed.redis.util.RedisUtil;
+import cn.jfspeed.system.security.LoginDataSourceImpl;
 
 /**
  * 登录后菜单 ID 回写必须带 TTL（{@code jffast:getAllMenuIdList:} 哈希）。
@@ -58,16 +61,25 @@ class LoginUtilMenuIdCacheTtlTest {
     private static final List<Long> MENU_IDS = List.of(11L, 12L);
 
     private final SysRoleMenuService roleMenuService = mock(SysRoleMenuService.class);
+    private final LoginDataSource loginDataSource = new LoginDataSourceImpl(
+            roleMenuService, mock(SysMenuService.class), mock(SysUserService.class));
 
     private MockedStatic<SpringUtil> spring;
     private MockedStatic<RedisUtil> redis;
+    private AnnotationConfigApplicationContext context;
 
     @BeforeEach
     void setUp() {
-        // LoginUtil 全程用反射取 bean：RedisUtil 类本身被静态桩接管，回传的实例只是占位
+        // RedisUtil 仍走反射取 bean：类本身被静态桩接管，回传的实例只是占位
         spring = mockStatic(SpringUtil.class);
         spring.when(() -> SpringUtil.getBean(RedisUtil.class)).thenReturn(mock(RedisUtil.class));
-        spring.when(() -> SpringUtil.getBean(SysRoleMenuService.class)).thenReturn(roleMenuService);
+
+        // 菜单 ID 自 R-11 起经 LoginDataSource SPI 取得，用真实上下文注册实现，
+        // 连带验到 getBeanProvider 的解析与 LoginDataSourceImpl 的委派
+        context = new AnnotationConfigApplicationContext();
+        context.refresh();
+        context.getBeanFactory().registerSingleton("loginDataSource", loginDataSource);
+        spring.when(SpringUtil::getApplicationContext).thenReturn(context);
 
         redis = mockStatic(RedisUtil.class);
         // 默认 hget 返回 null（未命中），才会走查库 + 回写分支
@@ -77,6 +89,7 @@ class LoginUtilMenuIdCacheTtlTest {
     void tearDown() {
         redis.close();
         spring.close();
+        context.close();
     }
 
     @Test
