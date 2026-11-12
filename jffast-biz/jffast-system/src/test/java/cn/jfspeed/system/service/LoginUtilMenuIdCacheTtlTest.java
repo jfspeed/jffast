@@ -108,7 +108,13 @@ class LoginUtilMenuIdCacheTtlTest {
     void neverWritesWithoutTtl() {
         when(roleMenuService.listAllMenuIdList(ROLE_ID)).thenReturn(MENU_IDS);
 
-        LoginUtil.getAllMenuIdList(List.of(ROLE_ID));
+        List<Long> menuIds = LoginUtil.getAllMenuIdList(List.of(ROLE_ID));
+
+        // 正向对照（CR-R2-VACUOUS-NEVER）：先证回写路径活着——SPI 接线失效时本断言先红，
+        // 绝不让下面的 never() 在死路径上空转恒真（登记实例：r1 接线断时 3 用例仅 1 条判红，
+        // 本用例就是恒真那条）。
+        assertEquals(MENU_IDS, menuIds, "查库结果必须原样返回");
+        redis.verify(() -> RedisUtil.hset(BaseConstant.CACHE_ALL_MENU_ID_LIST, FIELD, MENU_IDS, 3600L));
 
         redis.verify(() -> RedisUtil.hset(anyString(), anyString(), any()), never());
     }
