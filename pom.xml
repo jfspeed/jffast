@@ -247,7 +247,27 @@
                                 <fail>true</fail>
                             </configuration>
                         </execution>
-                    </executions>
+                                            <!-- TOOL-GATE-JDK-VERSION：值只引用本项目的 ${java.version}，母仓不下发任何版本值。
+                             [${java.version},) = 至少本项目声明的 JDK；精确 major 相等由
+                             jf_qa/scripts/verify_all.py 的工具链门禁负责（实跑 java -version 比对）。
+                             任何脚本（含绕过门禁直接跑 mvn 的临时脚本）用旧 JDK 都会在这里构建失败。 -->
+                        <execution>
+                            <id>require-project-jdk</id>
+                            <phase>validate</phase>
+                            <goals>
+                                <goal>enforce</goal>
+                            </goals>
+                            <configuration>
+                                <rules>
+                                    <requireJavaVersion>
+                                        <version>[${java.version},)</version>
+                                        <message>本项目要求 JDK ${java.version}（见本 pom 的 java.version）；当前运行 Maven 的 JDK 不符。请设置项目专属 JAVA_HOME，不要用系统默认 JDK。</message>
+                                    </requireJavaVersion>
+                                </rules>
+                                <fail>true</fail>
+                            </configuration>
+                        </execution>
+</executions>
                 </plugin>
                 <plugin>
                     <groupId>org.jacoco</groupId>
