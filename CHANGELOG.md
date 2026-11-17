@@ -2,6 +2,33 @@
 
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 格式，版本号遵循[语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [Unreleased]
+
+> `1.0.0` 之后的一批提交尚未发版，按类别摘要如下；完整清单以 git 历史为准。
+
+### Security
+
+- 登录密码加密改为 RSA-OAEP（SHA-256 摘要 + MGF1-SHA1、空 label）：前后端必须同步升级，已注入的 2048 位密钥对无需重新生成。
+- 下线 `/upload/**` 匿名静态直读：上传统一登记 `sys_file`（fail-closed，登记失败即删除已落盘文件）；读取收口为 `GET /sys/file/download/{id}`（登录 + 归属校验）与 `GET /sys/file/view/{id}?ticket=...`（短期 HMAC 签名，校验 TTL / 文件 id / 租户一致，响应带 nosniff 与 CSP sandbox）；文件引用统一用 `file:{id}`，经 `/sys/file/signed-url/{id}` 换发签名地址。
+- 错误响应不再把雪花短 ID 塞进 `data`；链路 traceId 统一由响应头 `X-Trace-Id` 下发。
+- 全局异常处理器取请求 URI 改为判空的 `safeUri()`，无 servlet 请求上下文时不再抛 NPE 吞掉原始异常。
+
+### Added
+
+- 通知模板与分组、异步任务 / 执行日志按 `tenant_id` 落库隔离；`TenantScopeBridge` 租户上下文桥接基础设施在 Base 定义。
+- Flowable 相关分页响应统一为 `PageRes`。
+- 登录数据源 SPI 化：登录用户来源改为可插拔扩展点。
+
+### Fixed
+
+- `jffast-starter-file` 自动装配条件注解修复。
+- `DataInitializer` 按「有意全量声明」口径整理初始化种子。
+- 启动校验文案与注释中的 `/upload/**` 免登录静态口径更新为受控下载 / 签名直显。
+
+### Changed
+
+- `1.0.0` 条目中「失败响应 `data` 固定承载 traceId」与「`/upload/**` 免登录可读取舍」两处口径已按上文修正；`SECURITY.md`、`README.md` 同步更新。
+
 ## [1.0.0] - 2026-11-01
 
 ### 新增
@@ -23,7 +50,7 @@
 
 ### 变更
 
-- 失败响应的 `data` 字段固定承载 traceId，不再承载业务数据；业务错误信息走 `msg`。
+- 失败响应只返回 `code` / `message`；链路 traceId 统一由响应头 `X-Trace-Id` 下发，`data` 不再承载追踪标识。
 - WebSocket `allowed-origins` 留空时**只放行同源握手**；跨源必须显式列出来源。
 - 用户岗位绑定 `postList` 采用三态语义：缺席 = 不修改、`[]` = 清空、非空 = 整组替换；岗位仍被用户绑定时禁止删除。
 - 生产环境 `spring.profiles.active=prod` 下接口文档与会话日志默认关闭，RSA 密钥与初始口令必须显式注入。
@@ -38,4 +65,4 @@
 
 - 初始管理员口令支持 `JFFAST_INIT_PASSWORD` 覆盖；dev / test 启动时自动生成一次性 RSA 密钥对。
 - 生产 profile 缺 RSA 密钥或初始口令时启动失败（fail-fast）。
-- `/upload/**` 免登录可读、字典基础读接口登录即可等取舍已写入 `SECURITY.md`，部署前请阅读。
+- 字典基础读接口登录即可等取舍，以及当前文件访问安全模型已写入 `SECURITY.md`，部署前请阅读。

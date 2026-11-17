@@ -33,7 +33,6 @@ import cn.hutool.json.JSONUtil;
 import cn.jfspeed.common.core.base.BaseConstant;
 import cn.jfspeed.common.web.domain.dto.R;
 import cn.jfspeed.common.core.exception.BusinessException;
-import cn.jfspeed.common.core.util.IdUtils;
 import cn.jfspeed.common.core.util.SensitiveMaskUtil;
 import cn.jfspeed.common.security.util.LoginUtil;
 import jakarta.servlet.http.HttpServletRequest;
@@ -48,6 +47,11 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 @RestControllerAdvice
 public class GlobalExceptionConfig {
+
+    /*
+     * 错误响应统一走 R.error(code, msg) 两参重载：链路 traceId 统一由 TraceIdFilter
+     * 通过响应头 X-Trace-Id 下发，body 的 data 不再承载追踪标识。
+     */
 
     /**
      * 取当前请求 URI，无请求上下文时返回占位符。
@@ -64,7 +68,7 @@ public class GlobalExceptionConfig {
     @ExceptionHandler(value = BusinessException.class)
     public R processException(BusinessException e) {
         log.error("自定义异常，uri:{}==>{}", safeUri(),e.getLocalizedMessage());
-        return R.error(e.getCode(), e.getMessage(), IdUtils.snowflakeShort());
+        return R.error(e.getCode(), e.getMessage());
     }
 
     @ResponseBody
@@ -78,7 +82,7 @@ public class GlobalExceptionConfig {
                 sb.append((i == 0 ? "" : "\n") + error.getDefaultMessage());
             }
         }
-        return R.error(400, sb.toString(), IdUtils.snowflakeShort());
+        return R.error(400, sb.toString());
     }
 
     @ExceptionHandler(ConstraintViolationException.class)
@@ -89,7 +93,7 @@ public class GlobalExceptionConfig {
         for (ConstraintViolation violation : ex.getConstraintViolations()) {
             sb.append((++i == 1 ? "" : "\n") + violation.getMessage());
         }
-        return R.error(400, sb.toString(), IdUtils.snowflakeShort());
+        return R.error(400, sb.toString());
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
@@ -103,13 +107,13 @@ public class GlobalExceptionConfig {
                 sb.append((i == 0 ? "" : "\n") + error.getDefaultMessage());
             }
         }
-        return R.error(400, sb.toString(), IdUtils.snowflakeShort());
+        return R.error(400, sb.toString());
     }
 
     @ExceptionHandler(HttpRequestMethodNotSupportedException.class)
     public R httpReqMethodNotSupported(HttpRequestMethodNotSupportedException e) {
         log.error("请求方式不支持，uri:{}==>{}", safeUri(),e.getLocalizedMessage());
-        return R.error(400, "请求方式不支持", IdUtils.snowflakeShort());
+        return R.error(400, "请求方式不支持");
     }
 
     // 说明：Sa-Token 的两个处理器（NotLoginException / NotPermissionException）已移到
@@ -124,14 +128,14 @@ public class GlobalExceptionConfig {
                 e.getParameterName(),
                 e.getParameterType());
         String message = String.format("请求缺少必要的参数 [%s]，请检查请求参数是否完整", e.getParameterName());
-        return R.error(400, message, IdUtils.snowflakeShort());
+        return R.error(400, message);
     }
 
     @ResponseStatus(HttpStatus.NOT_FOUND)
     @ExceptionHandler(NoResourceFoundException.class)
     public R noResourceFoundException(NoResourceFoundException e) {
         log.warn("请求资源不存在, uri:{}==>{}", safeUri(), e.getLocalizedMessage());
-        return R.error(404, "请求资源不存在", IdUtils.snowflakeShort());
+        return R.error(404, "请求资源不存在");
     }
 
     /**
@@ -145,8 +149,7 @@ public class GlobalExceptionConfig {
     @ExceptionHandler(DataIntegrityViolationException.class)
     public R dataIntegrityViolation(DataIntegrityViolationException e) {
         log.error("数据完整性约束冲突, uri:{} ==> {}", safeUri(), e.getLocalizedMessage(), e);
-        return R.error(400, "数据已存在或不符合约束（可能是用户名/手机号重复），请检查后重试",
-                IdUtils.snowflakeShort());
+        return R.error(400, "数据已存在或不符合约束（可能是用户名/手机号重复），请检查后重试");
     }
 
     /**
@@ -157,7 +160,7 @@ public class GlobalExceptionConfig {
     @ExceptionHandler(Exception.class)
     public R exception(Exception e) {
         // 对外只给通用文案：异常类名 / 驱动信息属内部细节，排障看日志。
-        R<Object> error = R.error(500, BaseConstant.UNKNOWN_EXCEPTION, IdUtils.snowflakeShort());
+        R<Object> error = R.error(500, BaseConstant.UNKNOWN_EXCEPTION);
         String safeMessage = SensitiveMaskUtil.maskText(e.getMessage());
         String safeErrorJson = SensitiveMaskUtil.maskText(JSONUtil.toJsonStr(error));
         log.error("GlobalException: {} [uri: {}] [return：{}]", safeMessage, safeUri(),

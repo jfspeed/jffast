@@ -803,7 +803,7 @@ public class SysUserController extends BaseController<SysUserService,SysUser> {
         String fileName = file.getOriginalFilename();
         FileUploadResult result = fileStorageService.uploadFileWithRecord("user-avatar", fileName, file, true);
         // ⚠️ 库里存的是**稳定引用** file:{id}，不是签名 URL（签名有 TTL，落库即过期），
-        // 也不是裸存储路径（路径会随 access-path 变化而失效，且一旦外泄等于永久可读）。
+        // 也不是裸存储路径（会随 access-path / 存储迁移失效，且绕过了 sys_file 归属校验）。
         UpdateWrapper<SysUser> updateWrapper = new UpdateWrapper<>();
         updateWrapper.set("avatar", FileRefs.of(result.getFileId()));
         updateWrapper.eq("id", loginId());

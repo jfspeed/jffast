@@ -34,13 +34,13 @@ import org.junit.jupiter.api.Test;
 import org.yaml.snakeyaml.Yaml;
 
 /**
- * 出厂配置契约：任务产物目录必须落在免登录静态映射的文件存储根**之外**，且必须被 .gitignore 覆盖。
+ * 出厂配置契约：任务产物目录必须落在 {@code sys_file} 已登记文件的存储根**之外**，且必须被 .gitignore 覆盖。
  *
  * <p>{@code SysTaskDirOutsideStorageRootTest} 已经保证「谁把 file-dir 配进存储根，启动就失败」，
  * 但那只守运行时。这里守的是仓库里那份默认配置本身——两个键分属两处
  * （{@code jffast.file.storage.local.path} 与 {@code jffast.system.task.file-dir}），改任何一个
- * 的人都不会想到另一个，而改错一次的后果是「带手机号/邮箱的用户表格 xlsx 变成 /upload/... 上的
- * 匿名下载链接」。
+ * 的人都不会想到另一个，而改错一次的后果是「带手机号/邮箱的用户表格 xlsx 混进 {@code sys_file}
+ * 归属审计与文件管理页视野」。
  *
  * <p>.gitignore 一并断言：产物目录默认落在工作目录下，没被忽略就会撞上 worktree 卫生门禁。
  *
@@ -90,7 +90,7 @@ class TaskArtifactDirContractTest {
     }
 
     @Test
-    @DisplayName("默认 file-dir 与默认存储根不同目录，产物不会被 /upload/** 匿名读到")
+    @DisplayName("默认 file-dir 与默认存储根不同目录，产物不会混进已登记文件的存储根")
     void defaultTaskDirIsOutsideAnonymousStorageRoot() throws IOException {
         Map<String, Object> cfg = baseConfig();
         String storageRoot = Objects.toString(dig(cfg, "jffast.file.storage.local.path"), null);
@@ -103,7 +103,7 @@ class TaskArtifactDirContractTest {
         Path task = Paths.get(defaultValue(taskDirRaw)).toAbsolutePath().normalize();
 
         assertFalse(task.startsWith(root),
-                "任务产物目录 " + task + " 落在免登录静态映射的存储根 " + root + " 之内");
+                "任务产物目录 " + task + " 落在 sys_file 已登记文件的存储根 " + root + " 之内");
         assertFalse(root.startsWith(task),
                 "存储根 " + root + " 不应被产物目录 " + task + " 包住（两处必须互不嵌套）");
     }

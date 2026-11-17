@@ -20,8 +20,9 @@ import cn.hutool.core.util.StrUtil;
 /**
  * 库里存的文件引用格式：{@code file:{id}}。
  *
- * <p><b>为什么库里不存 URL</b>：签名 URL 有 TTL，落库即过期；存储定位键（{@code /upload/...}）
- * 会随 {@code access-path} 变化而失效，且裸路径一旦外泄就等于永久可读。
+ * <p><b>为什么库里不存 URL</b>：签名 URL 有 TTL，落库即过期；裸存储路径（{@code /upload/...}）
+ * 会随 {@code access-path} / 存储迁移变化而失效，且绕过了 {@code sys_file} 登记与归属校验
+ * （读取统一走受控下载 / 签名直显）。
  * {@code file:{id}} 是**稳定引用**：换存储、换域名、换签名策略都不影响它，
  * 展示时再按当前策略换发。
  *

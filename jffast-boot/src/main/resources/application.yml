@@ -25,7 +25,8 @@ jffast:
       # 异步导入导出线程池队列容量，必须大于 0，否则启动失败（SysTaskRunner 构造器校验）
       queue-capacity: 100
       # 任务产物（导出/导入的临时 xlsx）落盘目录。**必须**在 jffast.file.storage.local.path
-      # 之外：存储根被 /upload/** 静态映射且免登录，落在里面的文件等于对外公开下载。
+      # 之外：存储根是 sys_file 已登记文件的落盘位置（读取走受控下载 / 签名直显，
+      # /upload/** 静态映射已下线），产物混入会进入文件管理页 / 归属审计视野。
       # 产物只经 /sys/task/download/{id}（登录 + 归属校验）读取；配成根内子目录会启动失败。
       file-dir: ${JFFAST_TASK_FILE_DIR:task-files}
     notification:

@@ -46,7 +46,8 @@ public class WebMvcConfig implements WebMvcConfigurer {
 
     /**
      * 本地文件存储根目录，与 {@code FileStorageProperties} 的 {@code jffast.file.storage.local.path}
-     * （默认 {@code upload}）保持一致，确保静态映射与实际落盘路径一致。
+     * （默认 {@code upload}）保持一致。文件读取统一走受控下载 / 签名直显，
+     * {@code /upload/**} 静态映射已下线，不再按该前缀对外提供文件。
      */
     @org.springframework.beans.factory.annotation.Value("${jffast.file.storage.local.path:upload}")
     private String uploadBasePath;

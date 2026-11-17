@@ -25,9 +25,9 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 import cn.dev33.satoken.exception.NotLoginException;
 import cn.dev33.satoken.exception.NotPermissionException;
-import cn.jfspeed.common.core.util.IdUtils;
 import cn.jfspeed.common.security.util.LoginUtil;
 import cn.jfspeed.common.web.domain.dto.R;
+import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
 
 /**
@@ -63,16 +63,29 @@ import lombok.extern.slf4j.Slf4j;
 @ConditionalOnClass({NotLoginException.class, NotPermissionException.class})
 public class SaTokenExceptionConfig {
 
+    /**
+     * 取当前请求 URI，无请求上下文时返回占位符。
+     *
+     * <p>与 {@code GlobalExceptionConfig#safeUri()} 同口径：{@link LoginUtil#getRequest()}
+     * 在无 servlet 请求上下文（异步线程、容器级错误分发）时返回 null，直接
+     * {@code .getRequestURI()} 会让异常处理器自身抛 NPE，把原始异常吞掉、
+     * 响应退化成容器默认错误页。
+     */
+    private static String safeUri() {
+        HttpServletRequest request = LoginUtil.getRequest();
+        return request == null ? "-" : request.getRequestURI();
+    }
+
     @ResponseStatus(HttpStatus.UNAUTHORIZED)
     @ExceptionHandler(NotLoginException.class)
     public R notLoginException(NotLoginException e) {
-        log.error("登录失效,uri:{}==>{}", LoginUtil.getRequest().getRequestURI(), e.getLocalizedMessage());
-        return R.error(401, "登录失效，请重新登录", IdUtils.snowflakeShort());
+        log.error("登录失效,uri:{}==>{}", safeUri(), e.getLocalizedMessage());
+        return R.error(401, "登录失效，请重新登录");
     }
 
     @ExceptionHandler(NotPermissionException.class)
     public R notPermissionException(NotPermissionException e) {
-        log.error("没有权限,uri:{}==>{}", LoginUtil.getRequest().getRequestURI(), e.getLocalizedMessage());
-        return R.error(403, "没有该项操作的权限", IdUtils.snowflakeShort());
+        log.error("没有权限,uri:{}==>{}", safeUri(), e.getLocalizedMessage());
+        return R.error(403, "没有该项操作的权限");
     }
 }

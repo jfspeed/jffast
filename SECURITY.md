@@ -34,20 +34,38 @@
 
 ## 已知取舍（有意保留，不是缺陷）
 
-下面三条在「安全性 vs 开箱即用」之间选择了后者。**部署方必须知道它们的边界**，请勿再次当成漏洞提交。
+下面三条记录部署方必须知道的边界：第 2、3 条是在「安全性 vs 开箱即用」之间有意选择了后者，第 1 条则是当前已落地、不再是一项取舍的文件访问安全模型。请勿把它们当成漏洞提交。
 
-### 1. `/upload/**` 免登录可读
+### 1. 文件访问：`sys_file` 登记 + 受控下载 + HMAC 签名直显（已加固，非取舍）
 
-文件存储根同时决定上传根目录与 `/upload/**` 的静态映射，且该路径在 Sa-Token 免登录白名单里。
+`/upload/**` 静态直读已**整个下线**：`WebMvcConfig#addResourceHandlers` 不再注册该静态映射，
+`SaTokenConfig` 也不再把它列入匿名白名单。所有上传统一登记 `sys_file`
+（fail-closed：登记失败即删除已落盘文件），读取侧只有两条受控通道：
 
-- **为什么保留**：头像、附件这类图片要能被 `<img src="...">` 直接引用。`<img>` 不会携带 Authorization 头，
-  一旦要求鉴权，页面上的头像与图片附件会全部失效，只能改造成签名 URL / blob 下载，代价远超收益。
-- **因此必须记住**：存储根内的**每一个文件都视同对外公开**。URL 形如「日期目录 + 随机文件名」不可枚举，
-  但**一旦泄露就是永久可读**，且没有任何访问审计。
-- **不要往里放敏感文件**：服务端生成的产物写在存储根之外——这正是 `jffast.system.task.file-dir`
-  默认指向 `./task-files`（而非 `./upload/task`）的原因，配成根内子目录会直接启动失败。
-- 若业务需要把附件变成私有：**不要**在 `/upload/**` 上加鉴权（会连带打碎 `<img>` 引用），
-  请改用 `SysFileController#download/{id}`（已按 `create_by` 做归属校验）作为唯一读取通道。
+- **管理页受控下载** `GET /sys/file/download/{id}`：登录态 + 按 `create_by` 归属校验；
+- **图片直显签名 URL** `GET /sys/file/view/{id}?ticket=...`：短期 HMAC 签名，验签时校验
+  ticket 未过期、`fileId` 与路径 id 一致、`sys_file.tenant_id` 与签名租户一致；响应带
+  `X-Content-Type-Options: nosniff` 与 `Content-Security-Policy: sandbox`，避免上传的
+  HTML/SVG 在本站源下执行脚本。该端点凭签名而非登录态放行，专门覆盖 `<img src>`
+  无法携带 Authorization 头的场景。
+
+文件引用统一用稳定引用 `file:{id}`，前端经 `GET /sys/file/signed-url/{id}` 换发签名地址；
+拿到旧的路径 URL（如 `/upload/日期/随机名`）不再能读文件。
+
+- **威胁模型**：攻击面从「拿到 / 猜到路径即可匿名读」收敛为「必须具备登录态 + 归属，
+  或持有一张短期、绑定文件 id 与租户的签名」。签名 TTL 到期即失效，且签名与 `sys_file`
+  记录绑定——记录不存在或租户不匹配即拒绝；直显响应受 nosniff + CSP sandbox 约束，
+  上传的 HTML/SVG 不能在站点源下执行脚本。
+- **给部署方的建议**：
+  - 生产（非 dev/test profile）必须显式配置 `jffast.file.sign.secret`（HMAC-SHA256 密钥），
+    否则启动失败；多实例部署每个实例必须注入同一把密钥，否则跨实例验签失败。
+  - 反向代理**不需要**放行 `/upload/**`；`/sys/file/view/**` 是唯一匿名可读前缀，
+    其余文件读取均要求登录态。
+  - 异步任务产物目录 `jffast.system.task.file-dir`（默认 `./task-files`）**必须**位于文件
+    存储根之外：存储根内的文件会进入 `sys_file` 归属审计与文件管理页视野，敏感产物应保持
+    根外独立目录，读取只经 `/sys/task/download/{id}`（登录 + 归属校验）；配成根内子目录会启动失败。
+  - 需要把附件变成私有时直接走 `download/{id}`；**不要**重新挂回 `/upload/**` 静态映射，
+    那会让归属模型形同虚设。
 
 ### 2. 默认 profile 是 `dev`
 

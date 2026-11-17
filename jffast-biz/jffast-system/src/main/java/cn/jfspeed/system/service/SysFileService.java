@@ -63,8 +63,8 @@ public class SysFileService extends BaseService<SysFileMapper, SysFile> {
      * 文件分页列表（ownerId 非空时仅返回该用户登记的记录）
      *
      * <p>没有这一层过滤时，任何拿到 {@code system:file:view} 的人都能在一页里看到别人上传文件的
-     * id 与 url，而 url 经 {@code /upload/**} 免登录静态映射可直接下载——查看权限于是变成了
-     * 全量文件的读取权限。归属口径与 {@link SysTaskService#page} 一致，按 create_by 隔离。
+     * id 与 url，列表即泄露他人文件的存在与元数据（受控下载 / 签名直显虽仍有归属校验，但清单
+     * 本身不该跨人可见）。归属口径与 {@link SysTaskService#page} 一致，按 create_by 隔离。
      *
      * <p><b>租户维度显式过滤</b>（AGENTS §2.1：基座不做租户兜底，必须自己过滤）：
      * 当前租户为 0（平台/单租户）时只看 {@code tenant_id = 0}；

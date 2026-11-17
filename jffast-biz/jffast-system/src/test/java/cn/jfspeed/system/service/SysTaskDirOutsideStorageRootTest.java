@@ -31,14 +31,15 @@ import cn.jfspeed.file.config.FileStorageProperties;
 /**
  * 任务产物目录与文件存储根的边界（无需 Redis/MySQL）。
  * <p>
- * 存储根被 {@code WebMvcConfig} 整体映射成 {@code /upload/**}，又被 {@code SaTokenConfig} 列进
- * 免登录白名单——所以「产物目录是否在存储根之内」不是一个整理偏好问题，而是「异步导出的用户
- * 表格（手机号、邮箱）和管理员上传的待导入文件，任何人拿到 taskId 就能匿名下走」与「只有归属
- * 校验过的 {@code /sys/task/download} 能读」的分界。历史上产物就写在 {@code upload/task}，
+ * 存储根是 {@code sys_file} 已登记上传文件的落盘位置（读取走受控下载 / 签名直显，
+ * {@code /upload/**} 静态映射已下线）。任务产物是异步导出的用户表格（手机号、邮箱）和管理员
+ * 上传的待导入文件，游离于登记之外；放进存储根会一并进入文件管理页 / 归属审计视野，与业务上传
+ * 混放。因此「产物目录是否在存储根之内」不是整理偏好问题，而是产物只经归属校验过的
+ * {@code /sys/task/download} 读取的边界。历史上产物就写在 {@code upload/task}，
  * 2026-10-26 第三轮复核发现并移出。
  * <p>
  * 移出之后仍可能被改回来（有人觉得「都在 upload 下好找」），所以这里同时钉住正例与反例：
- * 反例必须**启动即失败**，而不是运行时静默泄露。
+ * 反例必须**启动即失败**，而不是运行时静默混进受管理的文件清单。
  *
  * @author jffast
  */
@@ -53,14 +54,14 @@ class SysTaskDirOutsideStorageRootTest {
     }
 
     @Test
-    @DisplayName("产物目录配成存储根的子目录：等于匿名可下载，必须启动即失败")
+    @DisplayName("产物目录配成存储根的子目录：会混进已登记文件清单，必须启动即失败")
     void taskDirInsideStorageRootFailsFast() {
         IllegalStateException ex = assertThrows(IllegalStateException.class,
                 () -> new SysTaskRunner(storageRoot("upload"), 100, "upload/task"));
 
         assertTrue(ex.getMessage().contains("jffast.system.task.file-dir"),
                 "提示要指名配置项，否则运维无从下手：" + ex.getMessage());
-        assertTrue(ex.getMessage().contains("免登录"), "提示要说明后果：" + ex.getMessage());
+        assertTrue(ex.getMessage().contains("归属审计"), "提示要说明后果：" + ex.getMessage());
     }
 
     @Test
@@ -80,6 +81,6 @@ class SysTaskDirOutsideStorageRootTest {
         Path root = Paths.get("target/upload-guard-test").toAbsolutePath().normalize();
 
         assertTrue(dir.isAbsolute(), "任务目录应解析为绝对路径，避免工作目录变化后写偏：" + dir);
-        assertFalse(dir.startsWith(root), "产物目录不得落在免登录静态映射的存储根内：" + dir);
+        assertFalse(dir.startsWith(root), "产物目录不得落在 sys_file 已登记文件的存储根内：" + dir);
     }
 }

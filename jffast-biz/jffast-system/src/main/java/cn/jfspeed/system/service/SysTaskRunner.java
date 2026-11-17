@@ -180,14 +180,16 @@ public class SysTaskRunner {
     /**
      * 解析并校验任务产物目录：必须落在本地存储根目录**之外**。
      *
-     * <p>存储根（{@code jffast.file.storage.local.path}）被 {@code WebMvcConfig} 整体映射成
-     * {@code /upload/**}，而 {@code SaTokenConfig} 把 {@code /upload/**} 列为免登录白名单——
-     * 于是根目录里的每个文件都等于对外公开可下载。任务产物是异步导出的用户数据（手机号、邮箱）
-     * 和管理员上传的待导入文件，一旦落在根内，持有 taskId 者无需登录即可取走整份表格，
-     * 归属校验（{@code /sys/task/download}）被完全绕过。
+     * <p>存储根（{@code jffast.file.storage.local.path}）是已登记上传文件（{@code sys_file}）
+     * 的实际落盘位置，读取收口到受控下载 {@code /sys/file/download/{id}}（登录 + 归属校验）与
+     * 签名直显 {@code /sys/file/view/{id}?ticket=...}；{@code /upload/**} 匿名静态映射已下线。
+     * 任务产物是异步导出的用户数据（手机号、邮箱）和管理员上传的待导入文件，它们游离于
+     * {@code sys_file} 登记之外——一旦放进存储根，就会一并进入文件管理页 / 归属审计视野，
+     * 与业务上传混放。产物只应经 {@code /sys/task/download/{id}}（登录 + 归属校验）读取，
+     * 保持根外独立目录才能维持这条边界。
      *
-     * <p>因此这里选择启动即失败，而不是运行时静默泄露：配错的人当场收到可执行的提示，
-     * 而不是等到数据被别人下走。
+     * <p>因此这里选择启动即失败，而不是运行时静默暴露：配错的人当场收到可执行的提示，
+     * 而不是等到产物被混进受管理的文件清单。
      */
     private static Path resolveTaskDir(FileStorageProperties fileStorageProperties, String taskFileDir) {
         Path dir = Paths.get(taskFileDir).toAbsolutePath().normalize();
@@ -195,8 +197,10 @@ public class SysTaskRunner {
                 .toAbsolutePath().normalize();
         if (dir.startsWith(storageRoot)) {
             throw new IllegalStateException("jffast.system.task.file-dir 不能位于文件存储根 " + storageRoot
-                    + " 之内（当前值：" + dir + "）。存储根经 /upload/** 免登录静态对外提供，"
-                    + "任务产物落在里面等于公开下载；请改到根目录之外的独立目录，并在反向代理里禁止该目录对外访问。");
+                    + " 之内（当前值：" + dir + "）。存储根是 sys_file 已登记文件的落盘位置"
+                    + "（读取走受控下载 / 签名直显，/upload/** 静态映射已下线），"
+                    + "任务产物落在里面会混入文件管理页 / 归属审计视野；请改到根目录之外的独立目录，"
+                    + "并在反向代理里禁止该目录对外访问。");
         }
         return dir;
     }

@@ -65,11 +65,12 @@ public class SaTokenConfig implements WebMvcConfigurer {
     // /ws/**：WebSocket 握手路径（jffast.web.websocket.path，握手自带 token 校验）；
     // /error：Spring 错误页分发。
     //
-    // ⚠️ /upload/** **不再**匿名：上传文件此前没有任何权限模型，拿到路径就能读（审计实测匿名 200）。
-    // 该路径由 WebMvcConfig 的静态映射直出磁盘/MinIO，拦截器是唯一的登录校验点，移出白名单后
-    // 未登录请求在进入静态处理器前就被 StpUtil.checkLogin() 拦成 401。
-    // 影响面：浏览器 <img>/直链依赖 Sa-Token 的 cookie 携带登录态（dev 代理与生产 nginx 均同源）；
-    // 跨域直链、邮件/第三方嵌入不再可读——这是预期行为，需要匿名分享的资源请走带签名的下载接口。
+    // ⚠️ /upload/** **不再**匿名，且静态映射已整个删除：此前上传文件没有权限模型，
+    // 拿到路径就能读（审计实测匿名 200）。现在文件读取统一收口到
+    // /sys/file/download/{id}（登录 + 归属校验）与 /sys/file/view/{id}?ticket=...（短期签名），
+    // 两条通道都带归属 / 租户校验，凭路径直读的入口不复存在。
+    // 影响面：<img src> 这类无法携带 Authorization 头的场景改用短期签名 URL 换发；
+    // 跨域直链、邮件 / 第三方嵌入需显式签发，不再有凭路径即可读的入口。
     //
     // ✅ /sys/file/view/**：文件签名直显端点，**凭签名而非凭登录态**放行。
     // 该端点自带 HMAC 验签 + 过期校验 + 租户比对，签名即凭据；

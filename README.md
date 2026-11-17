@@ -39,13 +39,13 @@
 | 可插拔 Starter      |       ✅      |         ❌         |        ✅       |       ✅      |        ❌        |
 | 前端 CRUD 工厂       | ✅ createCrud |         ❌         |        ❌       |       ❌      |      ✅ 低代码      |
 | 轻量级认证            |  ✅ Sa-Token  | ❌ Spring Security |   ✅ Sa-Token   |   ❌ OAuth2   |     ❌ Shiro     |
-| 多租户字段隔离⁵          |   ⚙️ 预留⁵   |         ❌³        |        ✅       |       ✅      |        ✅        |
+| 多租户字段隔离⁵          | ⚙️ 部分内建⁵ |         ❌³        |        ✅       |       ✅      |        ✅        |
 | 数据权限             |     ✅ 5级     |        ✅ 5级       |      ✅ 5级      |       ✅      |        ✅        |
 | 开源协议             | ✅ Apache 2.0 |       ✅ MIT       |  ✅ Apache 2.0  | ✅ Apache 2.0 |    ⚠️ 含商业限制⁴    |
 | 代码生成             |    ✅ 开源版内置   |      ✅ 开源版内置      |     ✅ 开源版内置    |    ✅ 开源版内置   |      ✅ 低代码      |
 | 前端框架             | TDesign Vue3 |    Element Plus   |  Element Plus  | Element Plus | Ant Design Vue3 |
 
-¹ RuoYi-Vue master 分支已升级 Spring Boot 4.x，同时维护 2.x/3.x 分支；² JeecgBoot 主分支仍为 Spring Boot 2.x，3.x 为独立分支；³ RuoYi 原版无多租户，Plus 版才有；⁴ JeecgBoot 开源版可商用，但存在商业版分支及授权限制；⁵ 本开源版提供 `sys_tenant` 表结构与 `jffast.mybatis.tenant.*` 配置位，运行时字段隔离拦截需自行实现。
+¹ RuoYi-Vue master 分支已升级 Spring Boot 4.x，同时维护 2.x/3.x 分支；² JeecgBoot 主分支仍为 Spring Boot 2.x，3.x 为独立分支；³ RuoYi 原版无多租户，Plus 版才有；⁴ JeecgBoot 开源版可商用，但存在商业版分支及授权限制；⁵ 本开源版已内建部分多租户基础能力：`sys_tenant` 表结构与 `jffast.mybatis.tenant.*` 配置位、`TenantScopeBridge` 租户上下文桥接基础设施，以及通知模板（`sys_notification_template`）与异步任务 / 执行日志（`sys_task`）按 `tenant_id` 落库隔离；完整的运行时字段隔离拦截器（`TenantLineInnerInterceptor`）与多租户策略仍需自行实现或由商业版提供。
 
 ---
 

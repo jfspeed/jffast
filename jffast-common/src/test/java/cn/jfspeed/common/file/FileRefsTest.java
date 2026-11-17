@@ -27,7 +27,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * 稳定引用 {@code file:{id}} 的编解码用例（AC-19）。
  *
  * <p>库里只允许存 {@code file:{id}}：签名 URL 有 TTL（落库即过期），
- * 裸存储路径会随 {@code access-path} 变化而失效且外泄即永久可读。
+ * 裸存储路径会随 {@code access-path} / 存储迁移失效，且绕过了 {@code sys_file} 归属校验。
  *
  * @author jffast
  */
