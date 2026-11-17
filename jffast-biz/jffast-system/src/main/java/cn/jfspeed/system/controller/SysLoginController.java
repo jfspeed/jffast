@@ -15,6 +15,11 @@
  */
 package cn.jfspeed.system.controller;
 
+import cloud.tianai.captcha.application.ImageCaptchaApplication;
+import cloud.tianai.captcha.application.vo.ImageCaptchaVO;
+import cloud.tianai.captcha.common.constant.CaptchaTypeConstant;
+import cloud.tianai.captcha.common.response.ApiResponse;
+import cloud.tianai.captcha.validator.common.model.dto.MatchParam;
 import cn.hutool.captcha.CaptchaUtil;
 import cn.hutool.captcha.LineCaptcha;
 import cn.hutool.captcha.generator.RandomGenerator;
@@ -26,6 +31,7 @@ import cn.jfspeed.common.core.config.JfFastProperties;
 import cn.jfspeed.common.core.util.IdUtils;
 import cn.jfspeed.common.web.util.ClientIpResolver;
 import cn.jfspeed.system.domain.dto.SysLoginRequest;
+import cn.jfspeed.system.domain.dto.SliderCheckRequest;
 import cn.jfspeed.common.core.base.BaseConstant;
 import cn.jfspeed.common.security.spi.LoginPolicyProvider;
 import cn.jfspeed.common.security.util.LoginUtil;
@@ -122,15 +128,27 @@ public class SysLoginController {
      */
     private final ClientIpResolver clientIpResolver;
 
+    /**
+     * 滑块验证码应用（可选）：jffast.captcha.slider-enabled=false 时不装配，
+     * 此时滑块端点返回「功能关闭」，登录逻辑自动回落纯图片验证码。
+     */
+    private final ObjectProvider<ImageCaptchaApplication> imageCaptchaApplication;
+
     public SysLoginController(ObjectProvider<LoginPolicyProvider> loginPolicyProvider,
                               ObjectProvider<IpRateLimiter> ipRateLimiter,
-                              ObjectProvider<ClientIpResolver> clientIpResolver) {
+                              ObjectProvider<ClientIpResolver> clientIpResolver,
+                              ObjectProvider<ImageCaptchaApplication> imageCaptchaApplication) {
         this.loginPolicyProvider = loginPolicyProvider;
         this.ipRateLimiter = ipRateLimiter;
         this.clientIpResolver = clientIpResolver.getIfAvailable(() -> new ClientIpResolver(java.util.List.of()));
+        this.imageCaptchaApplication = imageCaptchaApplication;
     }
 
     private static final int DEFAULT_ERROR_COUNT = 3;
+
+    /** 滑块校验通过的一次性登录凭证前缀；value="1"，TTL 60s，登录消费后立即删除（防重放）。 */
+    private static final String CACHE_SLIDER_PASSED = BaseConstant.CACHE_PREFIX + "login:sliderPassed:";
+    private static final long SLIDER_PASSED_TTL_SECONDS = 60L;
 
     private Map<String,Object> userLogin(SysUser user,SysLog sysLog,SysSafe safe,String info){
         sysUserService.setDataScope(user);
@@ -227,21 +245,37 @@ public class SysLoginController {
             }
 
             // 检查是否需要验证码（登录失败 >= 2 次时需要）
+            // 滑块验证码（captchaId）优先；未提供或滑块功能关闭时回落到图片验证码（code/key）。
             if (currentErrorNum(BaseConstant.CACHE_ERROR_COUNT + userName) >= 2) {
+                String captchaId = loginDTO.getCaptchaId();
                 String code = loginDTO.getCode();
                 String key = loginDTO.getKey();
-                if (StrUtil.isBlank(code) || StrUtil.isBlank(key)) {
+
+                // 两条通道都没提交：提示需要验证码（前端据此拉起滑块或图片码）
+                if (StrUtil.isBlank(captchaId) && (StrUtil.isBlank(code) || StrUtil.isBlank(key))) {
                     return R.error(SystemErrorCode.CAPTCHA_REQUIRED.getCode(), SystemErrorCode.CAPTCHA_REQUIRED.getMsg());
                 }
-                String cachedCode = RedisUtil.get(BaseConstant.CACHE_VER_CODE+key);
-                if (cachedCode == null) {
-                    return R.error(SystemErrorCode.CAPTCHA_EXPIRED.getCode(), SystemErrorCode.CAPTCHA_EXPIRED.getMsg());
+
+                if (StrUtil.isNotBlank(captchaId)) {
+                    // 滑块通道：校验通过凭证存在即放行，消费后立即删除（防重放）
+                    String passed = RedisUtil.get(CACHE_SLIDER_PASSED + captchaId);
+                    if (passed == null) {
+                        return R.error(SystemErrorCode.SLIDER_CAPTCHA_INVALID.getCode(),
+                                SystemErrorCode.SLIDER_CAPTCHA_INVALID.getMsg());
+                    }
+                    RedisUtil.del(CACHE_SLIDER_PASSED + captchaId);
+                } else {
+                    // 图片码兜底通道：保留原有 Hutool 校验逻辑
+                    String cachedCode = RedisUtil.get(BaseConstant.CACHE_VER_CODE + key);
+                    if (cachedCode == null) {
+                        return R.error(SystemErrorCode.CAPTCHA_EXPIRED.getCode(), SystemErrorCode.CAPTCHA_EXPIRED.getMsg());
+                    }
+                    if (!code.equalsIgnoreCase(cachedCode)) {
+                        return R.error(SystemErrorCode.CAPTCHA_INVALID.getCode(), SystemErrorCode.CAPTCHA_INVALID.getMsg());
+                    }
+                    // 验证码使用后立即删除，防止重放
+                    RedisUtil.del(BaseConstant.CACHE_VER_CODE + key);
                 }
-                if (!code.equalsIgnoreCase(cachedCode)) {
-                    return R.error(SystemErrorCode.CAPTCHA_INVALID.getCode(), SystemErrorCode.CAPTCHA_INVALID.getMsg());
-                }
-                // 验证码使用后立即删除，防止重放
-                RedisUtil.del(BaseConstant.CACHE_VER_CODE+key);
             }
 
             // 用带时间戳校验的解密：拒绝过期的登录报文（防重放）
@@ -319,6 +353,70 @@ public class SysLoginController {
         }
         boolean need = currentErrorNum(BaseConstant.CACHE_ERROR_COUNT + userName) >= 2;
         return R.success(need);
+    }
+
+    /**
+     * 生成滑块验证码（tianai-captcha 前端 SDK 的 requestCaptchaDataUrl 指向此）。
+     *
+     * <p>直接返回 tianai 原生 {@link ApiResponse}：其 code=200 与前端 SDK 的成功判定一致，
+     * data 为 {@link ImageCaptchaVO}（含 id / 背景图 / 滑块图 base64 及尺寸），SDK 原生识别。
+     * 不套项目 {@code R}（字段名 message/msg 不同，会让 SDK 解析失败）。
+     */
+    // SDK requestCaptchaData() 固定用 POST（Content-Type: application/json，body {}），
+    // 早期这里误写 @GetMapping，导致全局异常处理器回「请求方式不支持」，SDK 弹窗直接报错。
+    // 同时保留 GET 便于联调/探活。
+    @RequestMapping(value = "/slider/gen", method = {RequestMethod.GET, RequestMethod.POST})
+    @Operation(summary = "生成登录滑块验证码")
+    public ApiResponse<ImageCaptchaVO> sliderGen(HttpServletRequest request) {
+        // 匿名端点：与 getCode 同口径，按来源 IP 分桶限流，防止被用于生成放大攻击
+        IpRateLimiter ipLimiter = ipRateLimiter.getIfAvailable();
+        if (ipLimiter != null) {
+            ipLimiter.check(request, IpRateLimiter.SCENE_CAPTCHA);
+        }
+        ImageCaptchaApplication app = imageCaptchaApplication.getIfAvailable();
+        if (app == null) {
+            return ApiResponse.ofError("滑块验证码未启用");
+        }
+        try {
+            return app.generateCaptcha(CaptchaTypeConstant.SLIDER);
+        } catch (Exception e) {
+            log.error("生成滑块验证码失败", e);
+            return ApiResponse.ofError("生成滑块验证码失败");
+        }
+    }
+
+    /**
+     * 校验滑块验证码（tianai-captcha 前端 SDK 的 validCaptchaUrl 指向此）。
+     *
+     * <p>校验通过后写入一次性登录凭证 {@code login:sliderPassed:{id}}（TTL 60s），
+     * 前端在 {@code validSuccess} 回调里拿 id 随登录请求提交；登录时消费该凭证并立即删除。
+     */
+    @PostMapping("/slider/check")
+    @Operation(summary = "校验登录滑块验证码")
+    public ApiResponse<?> sliderCheck(@RequestBody SliderCheckRequest body, HttpServletRequest request) {
+        IpRateLimiter ipLimiter = ipRateLimiter.getIfAvailable();
+        if (ipLimiter != null) {
+            ipLimiter.check(request, IpRateLimiter.SCENE_CAPTCHA);
+        }
+        ImageCaptchaApplication app = imageCaptchaApplication.getIfAvailable();
+        if (app == null) {
+            return ApiResponse.ofError("滑块验证码未启用");
+        }
+        if (body == null || StrUtil.isBlank(body.getId()) || body.getData() == null) {
+            return ApiResponse.ofCheckError("滑块校验参数不完整");
+        }
+        try {
+            ApiResponse<?> result = app.matching(body.getId(), new MatchParam(body.getData()));
+            if (result != null && result.isSuccess()) {
+                // 一次性凭证：60s 内可用于登录，登录后即删
+                RedisUtil.set(CACHE_SLIDER_PASSED + body.getId(), "1", SLIDER_PASSED_TTL_SECONDS);
+                return ApiResponse.ofSuccess(java.util.Collections.singletonMap("id", body.getId()));
+            }
+            return result == null ? ApiResponse.ofCheckError("滑块校验失败") : result;
+        } catch (Exception e) {
+            log.error("校验滑块验证码失败", e);
+            return ApiResponse.ofCheckError("滑块校验失败");
+        }
     }
 
     @PostMapping("/phoneLogin")
@@ -483,7 +581,8 @@ public class SysLoginController {
             if (reachedLimit(i, maxErrorCount)){
                 throw new BusinessException(SystemErrorCode.ACCOUNT_LOCKED.getCode(),"您的密码已错误"+maxErrorCount+"次，现已被锁定，"+str+"分钟后再尝试");
             }
-            throw new BusinessException(SystemErrorCode.PASSWORD_ERROR.getCode(),"用户名或密码错误，总登录次数"+maxErrorCount+"次，剩余次数: " + (maxErrorCount-i));
+            // 只提示泛化错误文案，不向前端暴露尝试次数/剩余次数等登录计数信息
+            throw new BusinessException(SystemErrorCode.PASSWORD_ERROR.getCode(),"用户名或密码错误");
         }
         return user;
     }

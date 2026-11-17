@@ -2,6 +2,10 @@ app:
   name: jffast
 
 jffast:
+  # 登录验证码：滑块（tianai-captcha）优先，异常时回落 Hutool 图片验证码。
+  # 关闭滑块后登录逻辑只走图片验证码（CaptchaConfig 的条件装配同步失效）。
+  captcha:
+    slider-enabled: ${JFFAST_SLIDER_CAPTCHA_ENABLED:true}
   # RSA 密钥对：登录 / 改密时密码的加密传输。
   # 仓库不存放任何密钥字面量——示例密钥对一旦入库即永久泄露（git 历史不可逆），
   # 而该私钥的用途正是解密登录密码明文。

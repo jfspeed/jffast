@@ -58,7 +58,9 @@ public class SaTokenConfig implements WebMvcConfigurer {
     // 由 SaTokenExceptionConfig 统一返回 HTTP 401。
     private static final List<String> PUBLIC_PATHS = Arrays.asList(
             "/sys/login", "/sys/getCode", "/sys/needCaptcha", "/sys/phoneLogin", "/sys/sendPhoneCode",
-            "/sys/logout"
+            "/sys/logout",
+            // 滑块验证码：生成/校验必须在登录前匿名可达（与 /sys/getCode 同口径）
+            "/sys/slider/gen", "/sys/slider/check"
     );
 
     // 仅保留本框架真实对外提供的基础设施路径；业务向匿名路径由应用按需声明（见类注释）。

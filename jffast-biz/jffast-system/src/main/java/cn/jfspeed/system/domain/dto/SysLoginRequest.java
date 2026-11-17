@@ -37,4 +37,7 @@ public class SysLoginRequest {
 
     @Schema(description = "验证码 key（由前端生成，用于关联验证码）")
     private String key;
+
+    @Schema(description = "滑块验证码通过凭证（tianai-captcha 校验成功后返回的 captchaId；与 code/key 二选一）")
+    private String captchaId;
 }

@@ -38,7 +38,11 @@ public enum SystemErrorCode implements IErrorCode {
     CAPTCHA_REQUIRED(1007, "请输入图形验证码"),
     /** 验证码 Redis 记录已过期：前端据此刷新验证码图片 */
     CAPTCHA_EXPIRED(1008, "验证码已失效，请重新获取"),
-    CAPTCHA_INVALID(1009, "验证码错误");
+    CAPTCHA_INVALID(1009, "验证码错误"),
+    /** 滑块验证码校验未通过或未提交通过凭证：登录失败达阈值时触发 */
+    SLIDER_CAPTCHA_INVALID(1010, "滑块验证未通过，请重新验证"),
+    /** 滑块验证码通过凭证已过期：前端据此重新拉起滑块 */
+    SLIDER_CAPTCHA_EXPIRED(1011, "滑块验证已失效，请重新验证");
 
     private final int code;
     private final String msg;

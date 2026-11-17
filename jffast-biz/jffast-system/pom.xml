@@ -65,6 +65,18 @@
             <groupId>org.bouncycastle</groupId>
             <artifactId>bcprov-jdk18on</artifactId>
         </dependency>
+        <!--
+          登录滑块验证码（行为验证）：仅引入 core 库，不用 springboot-starter。
+          原因：starter 基于 Spring Boot 2.2 的 spring.factories 自动配置，
+          在 Spring Boot 4 不再生效；core 库为纯 Java（仅 lombok/slf4j），
+          由 CaptchaConfig 用 TACBuilder 手动装配，前后端 SDK 版本需一致（1.5.5）。
+          许可证 MulanPSL2（宽松），通过依赖引入，不复制源码。
+        -->
+        <dependency>
+            <groupId>cloud.tianai.captcha</groupId>
+            <artifactId>tianai-captcha</artifactId>
+            <version>1.5.5</version>
+        </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-test</artifactId>
