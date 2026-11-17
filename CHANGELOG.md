@@ -18,6 +18,7 @@
 - 通知模板与分组、异步任务 / 执行日志按 `tenant_id` 落库隔离；`TenantScopeBridge` 租户上下文桥接基础设施在 Base 定义。
 - Flowable 相关分页响应统一为 `PageRes`。
 - 登录数据源 SPI 化：登录用户来源改为可插拔扩展点。
+- 登录滑块验证码（tianai-captcha 1.5.5，机制二）：登录失败达到阈值后前端拉起滑块拼图，`/sys/slider/gen` / `/sys/slider/check` 匿名端点按来源 IP 分桶限流，校验通过换发一次性登录凭证（TTL 60s，消费即删防重放）；`jffast.captcha.slider-enabled=false` 可整体关闭并回落纯图片验证码。
 
 ### Fixed
 
