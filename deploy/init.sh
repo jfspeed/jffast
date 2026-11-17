@@ -9,7 +9,7 @@
 #   1. 从 deploy/.env.example 复制出 deploy/.env（已存在则只补缺，不覆盖）
 #   2. 生成 RSA 密钥对：后端两行写本仓 .env；前端公钥自动同步到同一台机上
 #      并列 clone 的前端仓（不在同机则打印出来手动抄）
-#   3. 生成随机口令 —— JFFAST_INIT_PASSWORD / MYSQL_PASSWORD / REDIS_PASSWORD
+#   3. 生成随机口令 —— JFFAST_INIT_PASSWORD / JFFAST_FILE_SIGN_SECRET / MYSQL_PASSWORD / REDIS_PASSWORD
 #      （样例里的 test1234 会被自动换掉）
 #   4. 用 docker compose config 验证生成的 .env 真能被编排接受
 #   5. 打印访问地址、账号、数据卷落点与启动命令
@@ -20,7 +20,7 @@
 #   ENV_FILE=/tmp/x bash deploy/init.sh      # 写到别处（自检/CI 用，不动 deploy/.env）
 #
 # 想自己定口令就别让它随机 —— 先 export，脚本沿用不再覆盖：
-#   MYSQL_PASSWORD='xxx' REDIS_PASSWORD='yyy' JFFAST_INIT_PASSWORD='zzz' bash deploy/init.sh
+#   MYSQL_PASSWORD='xxx' REDIS_PASSWORD='yyy' JFFAST_INIT_PASSWORD='zzz' JFFAST_FILE_SIGN_SECRET='sss' bash deploy/init.sh
 # 端口要改同理：BACKEND_HOST_PORT=80 bash deploy/init.sh（写进 .env，之后可手改）
 #
 # ── 复用说明（同一套编排换环境时通常无需改它）──
@@ -185,6 +185,10 @@ fi
 # ── 口令与端口 ──
 init_pw="$(pick_pw JFFAST_INIT_PASSWORD "$(get_kv JFFAST_INIT_PASSWORD)")"
 set_kv JFFAST_INIT_PASSWORD "$init_pw"
+# 文件签名密钥：base 非 dev/test profile 下缺失即 fail-fast，且多实例必须一致。
+# 这里生成一次后写入 .env，跨实例部署时把 .env 里的这一行同步过去即可。
+sign_secret="$(pick_pw JFFAST_FILE_SIGN_SECRET "$(get_kv JFFAST_FILE_SIGN_SECRET)")"
+set_kv JFFAST_FILE_SIGN_SECRET "$sign_secret"
 mysql_pw="$(pick_pw MYSQL_PASSWORD "$(get_kv MYSQL_PASSWORD)")"
 set_kv MYSQL_PASSWORD "$mysql_pw"
 redis_pw="$(pick_pw REDIS_PASSWORD "$(get_kv REDIS_PASSWORD)")"
@@ -243,6 +247,8 @@ echo
 echo "【账号】"
 echo  "  管理员        admin / $init_pw"
 echo  "  ⚠ 这个口令只在**全新库第一次启动**时写入；库里 admin 口令已被改过（例如导入过既有 dump）就沿用库内的，注入值不生效。"
+echo  "  文件签名密钥  JFFAST_FILE_SIGN_SECRET=$sign_secret"
+echo  "  ⚠ 多实例/集群部署时所有实例必须填同一个值，否则下载链接验签会随机失败。"
 echo
 echo "【数据与落点】"
 printf '  MySQL        宿主机 127.0.0.1:%s · 容器内 mysql:3306 · 库 %s · 用户 root · 口令 %s\n' "$my_host_port" "$db_name" "$mysql_pw"

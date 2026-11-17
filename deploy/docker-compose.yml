@@ -154,6 +154,9 @@ services:
       RSA_PUBLIC_KEY: ${RSA_PUBLIC_KEY:?RSA_PUBLIC_KEY is required, generate with deploy/gen-rsa.sh}
       # admin 初始密码：prod profile 下无默认值，缺失即启动失败（application-prod.yml）
       JFFAST_INIT_PASSWORD: ${JFFAST_INIT_PASSWORD:?JFFAST_INIT_PASSWORD is required}
+      # 文件签名密钥：非 dev/test profile 下 JfFastFileAutoConfiguration 会 fail-fast（无默认值）。
+      # 多实例必须各实例一致，否则验签随机失败；env 名经 relaxed binding 到 jffast.file.sign.secret。
+      JFFAST_FILE_SIGN_SECRET: ${JFFAST_FILE_SIGN_SECRET:?JFFAST_FILE_SIGN_SECRET is required}
       # 可信反向代理网段：容器内后端看到的是「前端 nginx 容器」地址，不配本项 ⇒ 所有用户
       # 被判成同一个 IP，per-IP 限流（登录 30/分、验证码 10/分）退化成全站一个桶。
       # 默认给 Docker 默认 bridge 段；自定义网络若不在 172.16.0.0/12 内，需在 .env 覆盖。
